@@ -40,6 +40,22 @@
         "note": { "type": "string" }
       }
     },
+    "execution_metrics": {
+      "type": "object",
+      "description": "执行成本指标——所有字段必须有真实来源（真实计时、平台统计）；无法获取的字段记 null（未知），禁止估算填数",
+      "properties": {
+        "elapsed_seconds": { "type": ["integer", "null"], "description": "审查开始执行到最终报告完成的真实耗时（秒）" },
+        "build_seconds": { "type": ["integer", "null"], "description": "构建 / 环境启动耗时（秒）" },
+        "test_cases_planned": { "type": ["integer", "null"] },
+        "test_cases_executed": { "type": ["integer", "null"] },
+        "retries": { "type": ["integer", "null"], "description": "环境/工具失败后的重试次数" },
+        "independent_agents_used": { "type": ["integer", "null"], "description": "独立审查子代理调用数" },
+        "input_tokens": { "type": ["integer", "null"], "description": "平台统计的真实输入 Token 量；取不到记 null" },
+        "output_tokens": { "type": ["integer", "null"], "description": "平台统计的真实输出 Token 量；取不到记 null" },
+        "budget_exceeded": { "type": "boolean", "description": "是否超出等级软预算" },
+        "budget_exceeded_reason": { "type": ["string", "null"], "description": "超预算原因；高风险任务突破预算必须说明" }
+      }
+    },
     "functional_verification": {
       "type": "object",
       "properties": {

@@ -16,6 +16,7 @@
     "diff_fingerprint": "",
     "note": ""
   },
+  "execution_metrics": { "elapsed_seconds": 480, "build_seconds": 95, "test_cases_planned": 6, "test_cases_executed": 6, "retries": 0, "independent_agents_used": 0, "input_tokens": null, "output_tokens": null, "budget_exceeded": false, "budget_exceeded_reason": null },
   "functional_verification": {
     "result": "pass",
     "executed": ["后端构建", "GET /base/his/agency/queryPowerData 实测", "返回数据与库中记录核对", "必填参数缺失异常场景"],
