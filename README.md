@@ -155,6 +155,8 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 质量反馈 QG-20261028-001：发现缺陷：空日期查询报 500
 ```
 
+- 回访共三种方式：上面这句（推荐）、终端跑 `qg-feedback success|defect`、或直接在案例库网页可视化操作（看板拖拽 / 改标签 / `/relabel` 快速命令），详见 cases 仓库 README。
+
 ## 案例生命周期
 
 | 状态 | 含义 | 统计口径 |
