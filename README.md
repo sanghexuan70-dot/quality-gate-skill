@@ -22,13 +22,21 @@ regression-cases/cases.yml      规则回归用例（改规则后核对行为未
 
 1. 克隆本仓库（建议固定目录，如 `~/tools/quality-gate-skill`）。
 2. 按你使用的 Agent 接入技能目录（见下），软链方式保证 `git pull` 即升级。
-3. 配置团队模式令牌（写入 shell profile）：
+3. 配置个人访问令牌（PAT，每个同事自己建一个）：
 
-```bash
-export QG_GITLAB_TOKEN="<个人访问令牌>"   # scope: api，只放本地环境变量
-```
+   1. 打开 http://git.tsintergy.com:8070/-/profile/personal_access_tokens （右上角头像 → Settings → Access Tokens）；
+   2. Name 填 `quality-gate`，Expires 按公司要求（建议不超过一年），Scopes 只勾 **`api`**——创建/更新案例 Issue 与标签所需，GitLab 没有更细粒度的 scope，`api` 即最小可用；
+   3. 点 Create 后**立刻复制** `glpat-` 开头的令牌，页面只显示这一次；
+   4. 写入 `~/.zshrc` 并生效（之后新开的终端和 Agent 会话自动带上）：
 
-GitLab 地址与案例库项目 ID 已预置在 `config/default.yml`（http://git.tsintergy.com:8070 / 案例库项目 7854 = personal-warehouse/quality-gate/quality-gate-cases）；如需覆盖，用环境变量 `QG_GITLAB_URL` / `QG_CASES_PROJECT_ID`。
+   ```bash
+   echo 'export QG_GITLAB_TOKEN="glpat-你的令牌"' >> ~/.zshrc
+   source ~/.zshrc
+   ```
+
+   令牌只放本地环境变量：不写进代码、不写进 `config/default.yml`、不在聊天/群里转发；怀疑泄露回同一页面 Revoke 重建；到期前换新并更新 `~/.zshrc`。
+
+   GitLab 地址与案例库项目 ID 已预置在 `config/default.yml`（http://git.tsintergy.com:8070 / 案例库项目 7854 = personal-warehouse/quality-gate/quality-gate-cases），无需另行配置；如需覆盖，用环境变量 `QG_GITLAB_URL` / `QG_CASES_PROJECT_ID`。
 
 4. 验证：`python3 scripts/qg-feedback.py whoami`
 
@@ -122,5 +130,5 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 ## 实施三阶段
 
 1. **打通案例闭环**（现在即可）：同事接入 + 每次审查建案 + 回访，先保证数据真实完整。
-2. **自动汇总**：配置 CI schedule 与变量，周期产出分类报告。
+2. **自动汇总**：配置 CI schedule 与变量（仓库 Settings → CI/CD → Variables 添加 `QG_GITLAB_TOKEN` 并勾 Masked，再建 schedule pipeline 触发 `.gitlab-ci.yml` 里的 `weekly-case-report`），周期产出分类报告。
 3. **AI 辅助迭代**：定期让 AI 分析案例库提出规则增删与校准建议，维护者评审后 MR 发布。
