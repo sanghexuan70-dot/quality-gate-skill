@@ -103,7 +103,11 @@ def api(cfg, method, path, payload=None):
             return json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
         try:
-            msg = json.loads(e.read().decode("utf-8")).get("message", "")
+            body = json.loads(e.read().decode("utf-8"))
+            # GitLab 不同版本错误位置不同：新版在 message，13.x 部分错误（如 Label already exists）在 error
+            msg = body.get("message") or body.get("error") or ""
+            if isinstance(msg, (dict, list)):
+                msg = json.dumps(msg, ensure_ascii=False)
         except Exception:
             msg = ""
         raise QGError(f"GitLab API {e.code}: {msg or e.reason}") from None
@@ -112,14 +116,21 @@ def api(cfg, method, path, payload=None):
 
 
 def ensure_labels(cfg):
-    """确保状态标签存在；已存在（409/already）视为成功。"""
+    """先查后建：已存在的标签不再 POST（GitLab 13.11 的『Label already exists』藏在 error 字段且
+    曾导致 create 中断）；新建标签必须带 color（该版本无 color 的创建会被拒）。"""
+    existing, page = set(), 1
+    while True:
+        batch = api(cfg, "GET", f"/projects/{cfg['project_id']}/labels?per_page=100&page={page}")
+        if not batch:
+            break
+        existing.update(l["name"] for l in batch)
+        if len(batch) < 100:
+            break
+        page += 1
     for name in ALL_LABELS:
-        try:
-            api(cfg, "POST", f"/projects/{cfg['project_id']}/labels", {"name": name})
-        except QGError as e:
-            s = str(e).lower()
-            if not ("already" in s or "409" in s or "exist" in s):
-                raise
+        if name not in existing:
+            api(cfg, "POST", f"/projects/{cfg['project_id']}/labels",
+                {"name": name, "color": "#6699cc"})
 
 
 # ---------- 案例工具 ----------

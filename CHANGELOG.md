@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.4 - 2026-10-28
+
+修复 create 在 GitLab 13.11 上必然失败的 bug（两轮失败证据：QG-20261028-003/004 建案时 Agent 均被迫绕过官方脚本直调 API）：
+- api() 错误解析补齐 .error 字段（13.x 的『Label already exists』在 error 而非 message，原解析读不到导致豁免条件失配、create 中断）；
+- ensure_labels 改为先 GET 查询再创建——已存在标签零 POST，彻底绕开 already-exists 分支；
+- 新建标签补必填 color（该版本无 color 的创建会被拒）。
+已对真实 GitLab 验证：已存在标签静默通过、错误解析带出信息、新建+清理标签成功。
+
 ## 1.2.3 - 2026-10-28
 
 修复案例从统计中消失的隐患（依据：QG-20261028-002 手动网页改标签后 QG 根标签被整组替换挤掉，labels=QG 过滤导致 list/export 归零）：案例识别改为"标题符合 QG-编号格式 或 带任一案例标签"，不再依赖单一标签过滤；list/export 全量拉取后客户端过滤。
