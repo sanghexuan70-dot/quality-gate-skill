@@ -1,132 +1,85 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "quality-gate 案例记录",
-  "description": "每次质量审查结束后创建的结构化案例；提交到 GitLab Issue 描述中的 ```json 代码块必须符合本结构。证据脱敏后再填。",
+  "description": "每次质量审查结束后创建的结构化案例；提交到 GitLab Issue 描述中的 ```json 代码块必须符合本结构。证据脱敏后再填。v1.2.0：新增 task_type 与任务背景字段、detected/open findings 拆分、items 问题明细、版本信息扩展、retrospective 复盘块（仅回访后填写）。",
   "type": "object",
-  "required": [
-    "skill_version",
-    "scope",
-    "risk_level",
-    "task_summary"
-  ],
+  "required": ["skill_version", "task_summary", "task_type", "scope", "risk_level"],
   "properties": {
     "case_id": {
       "type": "string",
       "pattern": "^QG-\\d{8}-\\d{1,6}$",
       "description": "创建时留空，由 qg-feedback create 生成并写回：QG-日期-issue编号"
     },
-    "created_at": {
-      "type": "string",
-      "description": "ISO 8601，创建时留空由脚本填写"
-    },
-    "skill_version": {
-      "type": "string",
-      "description": "运行时的 SKILL.md 版本（VERSION 文件）"
-    },
+    "created_at": { "type": "string", "description": "ISO 8601，创建时留空由脚本填写" },
+    "skill_version": { "type": "string", "description": "运行时的 SKILL.md 版本（VERSION 文件）" },
     "task_summary": {
       "type": "string",
-      "description": "一句话业务摘要（≤40 字，如：机组申报价格页新增批量删除），展示在案例标题，让人不点开就知道这次改了什么"
+      "maxLength": 40,
+      "description": "一句话业务摘要（≤40 字），展示在案例标题，让人不点开就知道这次改了什么"
     },
-    "scope": {
+    "task_type": {
       "type": "string",
-      "enum": [
-        "frontend",
-        "backend",
-        "fullstack"
-      ]
+      "enum": ["feature", "bugfix", "refactor", "doc", "config", "other"],
+      "description": "任务类型——长期统计『哪类任务更容易漏缺陷』的分组维度"
     },
-    "stack": {
-      "type": "string",
-      "description": "技术栈，如 React/UmiJS、Java/Spring Boot"
-    },
-    "risk_level": {
-      "type": "string",
-      "enum": [
-        "light",
-        "regular",
-        "high"
-      ]
-    },
-    "permission_related": {
-      "type": "boolean",
-      "description": "是否触及权限/租户/敏感数据"
-    },
+    "reported_symptom": { "type": "string", "description": "用户报告的原始症状（bugfix 类必填）" },
+    "expected_behavior": { "type": "string", "description": "预期行为 / 验收口径" },
+    "scope": { "type": "string", "enum": ["frontend", "backend", "fullstack"] },
+    "stack": { "type": "string", "description": "技术栈，如 React/UmiJS、Java/Spring Boot" },
+    "risk_level": { "type": "string", "enum": ["light", "regular", "high"] },
+    "permission_related": { "type": "boolean", "description": "是否触及权限/租户/敏感数据" },
     "code_version": {
       "type": "object",
+      "description": "唯一识别实际被测代码的版本信息",
       "properties": {
-        "commit": {
-          "type": "string"
-        },
-        "uncommitted": {
-          "type": "boolean",
-          "description": "存在未提交修改时必须为 true"
-        },
-        "note": {
-          "type": "string",
-          "description": "未提交变更摘要或版本说明"
-        }
+        "commit": { "type": "string", "description": "HEAD commit（有完整 SHA 用完整 SHA）" },
+        "branch": { "type": "string" },
+        "uncommitted": { "type": "boolean", "description": "存在未提交修改时必须为 true" },
+        "changed_files": { "type": "array", "items": { "type": "string" }, "description": "改动文件清单" },
+        "diff_fingerprint": { "type": "string", "description": "未提交差异的指纹（如 diff 的 hash），不存完整 diff" },
+        "note": { "type": "string" }
       }
     },
     "functional_verification": {
       "type": "object",
       "properties": {
-        "result": {
-          "type": "string",
-          "enum": [
-            "pass",
-            "partial",
-            "fail"
-          ]
-        },
-        "executed": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "实际执行的检查项"
-        },
-        "not_applicable": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "不适用项及理由"
-        },
-        "blocked": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "因环境/工具不可用未执行项及原因"
-        }
+        "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
+        "executed": { "type": "array", "items": { "type": "string" }, "description": "实际执行的检查项" },
+        "not_applicable": { "type": "array", "items": { "type": "string" }, "description": "不适用项及理由" },
+        "blocked": { "type": "array", "items": { "type": "string" }, "description": "因环境/工具不可用未执行项及原因" }
       }
     },
     "code_review": {
       "type": "object",
       "properties": {
-        "level": {
-          "type": "string",
-          "enum": [
-            "none",
-            "light",
-            "regular",
-            "deep"
-          ]
-        },
-        "findings": {
+        "level": { "type": "string", "enum": ["none", "light", "regular", "deep"] },
+        "detected_findings": {
           "type": "object",
+          "description": "发现过的问题计数（含已修复的）",
           "properties": {
-            "p0": {
-              "type": "integer"
-            },
-            "p1": {
-              "type": "integer"
-            },
-            "p2": {
-              "type": "integer"
-            },
-            "p3": {
-              "type": "integer"
+            "p0": { "type": "integer" }, "p1": { "type": "integer" },
+            "p2": { "type": "integer" }, "p3": { "type": "integer" }
+          }
+        },
+        "open_findings": {
+          "type": "object",
+          "description": "收口时仍未关闭的计数：已修复记 0；处置未确认记 null（待补录），不得臆断为 0",
+          "properties": {
+            "p0": { "type": ["integer", "null"] }, "p1": { "type": ["integer", "null"] },
+            "p2": { "type": ["integer", "null"] }, "p3": { "type": ["integer", "null"] }
+          }
+        },
+        "items": {
+          "type": "array",
+          "description": "问题明细，P1 及以上必填；P2/P3 尽量补——统计『哪些审查项常产出无效建议』靠它",
+          "items": {
+            "type": "object",
+            "required": ["severity", "summary", "status"],
+            "properties": {
+              "severity": { "type": "string", "description": "P0/P1/P2/P3" },
+              "summary": { "type": "string", "description": "问题一句话 + 位置（文件:行）" },
+              "status": { "type": "string", "enum": ["fixed", "accepted", "deferred", "open"] },
+              "confirmed": { "type": ["boolean", "null"], "description": "回访时确认是否真实问题；false=误报。建案时留空" }
             }
           }
         },
@@ -135,24 +88,12 @@
           "description": "质量门禁提前拦截的缺陷明细——成功案例的核心价值所在",
           "items": {
             "type": "object",
-            "required": [
-              "description"
-            ],
+            "required": ["description"],
             "properties": {
-              "type": {
-                "type": "string",
-                "description": "缺陷类型，如 数据正确性/权限隔离/事务一致性"
-              },
-              "severity": {
-                "type": "string"
-              },
-              "check_item": {
-                "type": "string",
-                "description": "由哪条检查项拦截"
-              },
-              "description": {
-                "type": "string"
-              }
+              "type": { "type": "string", "description": "缺陷类型，如 数据正确性/权限隔离/事务一致性" },
+              "severity": { "type": "string" },
+              "check_item": { "type": "string", "description": "由哪条检查项拦截" },
+              "description": { "type": "string" }
             }
           }
         }
@@ -162,65 +103,43 @@
       "type": "object",
       "description": "按报告统计口径分列；不适用不计入已通过",
       "properties": {
-        "total": {
-          "type": "integer"
-        },
-        "pass": {
-          "type": "integer"
-        },
-        "fail": {
-          "type": "integer"
-        },
-        "blocked_or_untested": {
-          "type": "integer"
-        },
-        "unclear": {
-          "type": "integer",
-          "description": "需求不明确条数"
-        },
-        "not_applicable": {
-          "type": "integer"
-        }
+        "total": { "type": "integer" }, "pass": { "type": "integer" },
+        "fail": { "type": "integer" }, "blocked_or_untested": { "type": "integer" },
+        "unclear": { "type": "integer", "description": "需求不明确条数" },
+        "not_applicable": { "type": "integer" }
       }
     },
-    "outcome_status": {
-      "type": "string",
-      "enum": [
-        "pending",
-        "success",
-        "defect_found",
-        "no_followup"
-      ]
-    },
+    "outcome_status": { "type": "string", "enum": ["pending", "success", "defect_found", "no_followup"] },
     "follow_up": {
       "type": "object",
-      "description": "回访后由 qg-feedback success/defect 补充",
+      "description": "回访后由 qg-feedback success/defect 或人工补写",
       "properties": {
-        "feedback_at": {
-          "type": "string"
-        },
-        "result": {
-          "type": "string"
-        },
+        "feedback_at": { "type": "string" },
+        "result": { "type": "string" },
         "defects": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "description": {
-                "type": "string"
-              },
-              "why_missed": {
-                "type": "string",
-                "description": "原审查为什么没拦住"
-              },
-              "rule_change_hint": {
-                "type": "string",
-                "description": "改哪条规则/加哪条检查可防复发"
-              }
+              "description": { "type": "string" },
+              "why_missed": { "type": "string", "description": "原审查为什么没拦住" },
+              "rule_change_hint": { "type": "string", "description": "改哪条规则/加哪条检查可防复发" }
             }
           }
+        },
+        "confirmed_false_positives": {
+          "type": "array", "items": { "type": "string" },
+          "description": "回访确认的误报（审查提出但实际不是问题），用于收紧误报多的规则"
         }
+      }
+    },
+    "retrospective": {
+      "type": "object",
+      "description": "复盘块——仅回访反馈到达后填写；建案时审查 Agent 不得自行断言规则有效",
+      "properties": {
+        "effective_checks": { "type": "array", "items": { "type": "string" }, "description": "本案例证明有效的检查项" },
+        "missed_checks": { "type": "array", "items": { "type": "string" }, "description": "本案例暴露缺失的检查" },
+        "proposed_improvements": { "type": "array", "items": { "type": "string" }, "description": "改进提案条目（正式提案走技能仓库 MR，不写进案例 Issue）" }
       }
     }
   }

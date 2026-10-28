@@ -164,16 +164,20 @@ def parse_dt(s):
 def build_description(record):
     fv = record.get("functional_verification") or {}
     cr = record.get("code_review") or {}
+    det = (cr.get("detected_findings") or cr.get("findings")) or {}
+    op = cr.get("open_findings") or {}
+    det_s = "/".join(str(det.get(p, 0)) for p in ("p0", "p1", "p2", "p3"))
+    op_s = "/".join("?" if op.get(p) is None else str(op.get(p)) for p in ("p0", "p1", "p2", "p3"))
     rows = [
         ("任务摘要", record.get("task_summary", "")),
+        ("任务类型", record.get("task_type", "")),
         ("Skill 版本", record.get("skill_version", "")),
         ("开发范围 / 风险", f"{record.get('scope', '')} / {record.get('risk_level', '')}"),
         ("技术栈", record.get("stack", "")),
         ("涉及权限/租户/敏感数据", record.get("permission_related", "")),
         ("代码版本", json.dumps(record.get("code_version", {}), ensure_ascii=False)),
         ("功能验证", f"结果={fv.get('result', '')}；执行={len(fv.get('executed', []))} 项；不适用={len(fv.get('not_applicable', []))} 项；阻塞={len(fv.get('blocked', []))} 项"),
-        ("代码审查", f"等级={cr.get('level', '')}；问题 P0/P1/P2/P3="
-         + "/".join(str((cr.get("findings") or {}).get(p, 0)) for p in ("p0", "p1", "p2", "p3"))),
+        ("代码审查", f"等级={cr.get('level', '')}；发现 P0-P3={det_s}｜未关闭={op_s}"),
         ("拦截缺陷数", len(cr.get("intercepted_defects") or [])),
         ("需求统计", json.dumps(record.get("requirement_stats", {}), ensure_ascii=False)),
     ]
@@ -213,7 +217,7 @@ def cmd_create(args, cfg):
             record = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         raise QGError(f"读取案例文件失败: {e}")
-    for field in ("skill_version", "scope", "risk_level", "task_summary"):
+    for field in ("skill_version", "scope", "risk_level", "task_summary", "task_type"):
         if not record.get(field):
             raise QGError(f"案例缺少必填字段: {field}")
     record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))

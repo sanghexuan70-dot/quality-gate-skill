@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 - 2026-10-28
+
+案例结构增量扩展（依据：QG-20261028-002 首例复盘——发现过的问题与仍未关闭的问题混计、P2/P3 无明细、无任务类型与分支信息，无法支撑长期统计）：
+- 新增必填 task_type（feature/bugfix/…）与可选任务背景字段（reported_symptom / expected_behavior，bugfix 建议必附）；
+- code_review.findings 拆分为 detected_findings（发现过，含已修复）与 open_findings（收口时仍未关闭；处置未确认记 null，禁止臆断为 0）；
+- 新增 items 问题明细（级别/位置/处置/回访时确认是否误报），P1 及以上必填；
+- code_version 扩展 branch / changed_files / diff_fingerprint；
+- 新增 follow_up.confirmed_false_positives（误报追踪）与 retrospective 复盘块（仅回访后填写，建案时不得预填）；
+- SKILL.md 新增规则：案例与改进提案分离（提案走技能仓库 MR 并附案例编号）。
+
 ## 1.1.0 - 2026-10-28
 
 案例新增必填字段 task_summary（任务摘要，≤40 字）并写入 Issue 标题——看板/列表不点开即可知道本次改了什么（依据：QG-20261028-002 标题只有范围与技术栈，无法分辨改动内容）。同步更新 schema、示例、SKILL.md 建案字段清单与 RC-007 回归用例；标题格式变为 [编号] 状态 | 范围/风险 | 任务摘要，技术栈仍在描述表格中。

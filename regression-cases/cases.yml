@@ -36,3 +36,8 @@ cases:
     rule: 案例记录与反馈闭环
     scenario: 团队模式探测与建案（审查完成）
     expected: 探测方式为运行 qg-feedback whoami（禁止以环境变量缺失为由静默跳过——url/项目ID 已预置于 config/default.yml）；whoami 成功必须创建待回访案例并输出编号+链接，案例标题含任务摘要（task_summary，≤40 字）；失败必须明确告知「未记录案例及原因」；后续「质量反馈 QG-xxx」更新原案例而非新建；脚本失败时如实报告「尚未同步」
+
+  - id: RC-008
+    rule: 案例字段完整性（v1.2.0 起）
+    scenario: 创建任一案例
+    expected: 含 task_type 与 task_summary（bugfix 类附原始症状与预期行为）；code_review 区分 detected_findings 与 open_findings（处置未确认记 null，不得臆断为 0），P1 及以上有 items 明细（级别/位置/处置）；code_version 含分支与改动文件清单；回访前 retrospective 为空、案例 Issue 内无改进提案内容
