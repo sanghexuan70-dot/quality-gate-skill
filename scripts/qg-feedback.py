@@ -172,30 +172,131 @@ def parse_dt(s):
         return None
 
 
+CN_SCOPE = {"frontend": "前端", "backend": "后端", "fullstack": "全栈"}
+CN_RISK = {"light": "轻量", "regular": "常规", "high": "高风险"}
+CN_TYPE = {"feature": "新功能", "bugfix": "缺陷修复", "refactor": "重构",
+           "doc": "文档", "config": "配置", "other": "其他"}
+CN_FV_RESULT = {"pass": "功能验证通过", "partial": "功能验证部分通过", "fail": "功能验证未通过"}
+CN_ITEM_STATUS = {"fixed": "已修复", "accepted": "已接受", "deferred": "暂缓", "open": "未关闭"}
+BUDGET_RANGE = {"light": "5–10 分钟", "regular": "10–20 分钟", "high": "20–40 分钟"}
+
+
+def _cn(mapping, value):
+    return mapping.get(value, str(value or "未知"))
+
+
 def build_description(record):
+    """案例 Issue 描述：上半部分给人读（一句话结论 / 导读 / 明细），下半部分 details 折叠放给脚本解析的 JSON。"""
     fv = record.get("functional_verification") or {}
     cr = record.get("code_review") or {}
     det = (cr.get("detected_findings") or cr.get("findings")) or {}
     op = cr.get("open_findings") or {}
-    det_s = "/".join(str(det.get(p, 0)) for p in ("p0", "p1", "p2", "p3"))
-    op_s = "/".join("?" if op.get(p) is None else str(op.get(p)) for p in ("p0", "p1", "p2", "p3"))
-    rows = [
-        ("任务摘要", record.get("task_summary", "")),
-        ("任务类型", record.get("task_type", "")),
-        ("Skill 版本", record.get("skill_version", "")),
-        ("开发范围 / 风险", f"{record.get('scope', '')} / {record.get('risk_level', '')}"),
-        ("技术栈", record.get("stack", "")),
-        ("涉及权限/租户/敏感数据", record.get("permission_related", "")),
-        ("代码版本", json.dumps(record.get("code_version", {}), ensure_ascii=False)),
-        ("功能验证", f"结果={fv.get('result', '')}；执行={len(fv.get('executed', []))} 项；不适用={len(fv.get('not_applicable', []))} 项；阻塞={len(fv.get('blocked', []))} 项"),
-        ("代码审查", f"等级={cr.get('level', '')}；发现 P0-P3={det_s}｜未关闭={op_s}"),
-        ("拦截缺陷数", len(cr.get("intercepted_defects") or [])),
-        ("需求统计", json.dumps(record.get("requirement_stats", {}), ensure_ascii=False)),
-    ]
-    lines = ["| 字段 | 内容 |", "| --- | --- |"]
-    lines += [f"| {k} | {str(v)[:300]} |" for k, v in rows]
-    lines += ["", "```json", json.dumps(record, ensure_ascii=False, indent=2), "```"]
-    return "\n".join(lines)
+    items = cr.get("items") or []
+    intercepted = cr.get("intercepted_defects") or []
+    metrics = record.get("execution_metrics") or {}
+    code = record.get("code_version") or {}
+    L = []
+
+    # —— 一句话结论 ——
+    open_known = sum(v for v in op.values() if isinstance(v, int))
+    open_unknown = sum(1 for v in op.values() if v is None)
+    conclusion = [_cn(CN_FV_RESULT, fv.get("result"))]
+    if intercepted:
+        order = ("P0", "P1", "P2", "P3")
+        sevs = [d.get("severity", "?") for d in intercepted]
+        top = min(sevs, key=lambda s: order.index(s) if s in order else 9)
+        conclusion.append(f"拦截 {len(intercepted)} 项缺陷（最高 {top}）")
+    else:
+        conclusion.append("拦截 0 项")
+    conclusion.append(f"未关闭 {open_known} 项" + (f"（待补录 {open_unknown} 项）" if open_unknown else ""))
+    L.append("> **" + "｜".join(conclusion) + "**")
+    L.append("")
+
+    # —— 改了什么 ——
+    L.append(f"**改了什么**：{record.get('task_summary', '')}"
+             f"（{_cn(CN_TYPE, record.get('task_type'))} · {_cn(CN_SCOPE, record.get('scope'))}"
+             f" · {_cn(CN_RISK, record.get('risk_level'))}审查 · Skill v{record.get('skill_version', '?')}）")
+    if record.get("reported_symptom"):
+        L.append(f"- 原始症状：{record['reported_symptom']}")
+    if record.get("expected_behavior"):
+        L.append(f"- 预期行为：{record['expected_behavior']}")
+    commit = (code.get("commit") or "")[:8] or "未知提交"
+    dirty = ""
+    if code.get("uncommitted"):
+        dirty = "，含未提交修改"
+        if code.get("diff_fingerprint"):
+            dirty += f"（指纹 {str(code['diff_fingerprint'])[:23]}…）"
+    files = f"，改动 {len(code.get('changed_files') or [])} 个文件" if code.get("changed_files") else ""
+    L.append(f"- 代码版本：{code.get('branch') or '未知分支'} @ {commit}{dirty}{files}")
+    L.append("")
+
+    # —— 验证了什么 ——
+    executed = fv.get("executed") or []
+    L.append(f"**验证了什么**（{len(executed)} 项）：")
+    for e in executed[:8]:
+        L.append(f"- {e}")
+    if len(executed) > 8:
+        L.append(f"- …等共 {len(executed)} 项")
+    for na in (fv.get("not_applicable") or []):
+        L.append(f"- ⏭️ 不适用：{na}")
+    for b in (fv.get("blocked") or []):
+        L.append(f"- ⚠️ 阻塞：{b}")
+    L.append("")
+
+    # —— 拦截明细 ——
+    if intercepted:
+        L.append("**拦截明细**（质量门禁提前发现、交付前已处理的问题）：")
+        for d in intercepted:
+            L.append(f"- 🔴 {d.get('severity', '?')}｜{d.get('type', '')}｜{d.get('description', '')}")
+            if d.get("check_item"):
+                L.append(f"  - 由「{d['check_item']}」拦下")
+        L.append("")
+
+    # —— 审查发现 ——
+    open_note = f"｜未关闭 {open_known} 项" + (f"（另有 {open_unknown} 项待补录）" if open_unknown else "")
+    if items:
+        parts = []
+        for sev in ("p0", "p1", "p2", "p3"):
+            n = det.get(sev, 0)
+            if n:
+                st = "、".join(sorted({CN_ITEM_STATUS.get(i.get("status"), "处置未知")
+                                       for i in items if (i.get("severity") or "").upper() == sev.upper()})) or "处置未知"
+                parts.append(f"{sev.upper()}×{n}（{st}）")
+        L.append("**审查发现**：" + (" · ".join(parts) if parts else "无") + open_note)
+    else:
+        det_s = " · ".join(f"{s.upper()}×{det.get(s, 0)}" for s in ("p0", "p1", "p2", "p3") if det.get(s))
+        L.append("**审查发现**：" + (det_s or "无") + open_note)
+    L.append("")
+
+    # —— 成本 ——
+    if metrics:
+        bits = []
+        if metrics.get("elapsed_seconds") is not None:
+            bits.append(f"耗时 {round(metrics['elapsed_seconds'] / 60)} 分钟"
+                        f"（{_cn(CN_RISK, record.get('risk_level'))}预算 {BUDGET_RANGE.get(record.get('risk_level'), '—')}）")
+        if metrics.get("test_cases_executed") is not None:
+            bits.append(f"用例 {metrics['test_cases_executed']}/{metrics.get('test_cases_planned') or '?'}")
+        if metrics.get("retries") is not None:
+            bits.append(f"重试 {metrics['retries']}")
+        if metrics.get("independent_agents_used") is not None:
+            bits.append(f"子代理 {metrics['independent_agents_used']}")
+        tk = metrics.get("input_tokens")
+        bits.append("Token 未知" if tk is None else f"Token 入{tk}/出{metrics.get('output_tokens') or '?'}")
+        if metrics.get("budget_exceeded"):
+            bits.append(f"⚠️ 超预算：{metrics.get('budget_exceeded_reason') or '未说明'}")
+        L.append("**成本**：" + "｜".join(bits))
+        L.append("")
+
+    # —— 机读区（折叠）+ 字段字典链接 ——
+    L.append("<details><summary>📦 完整案例数据（JSON，供统计脚本解析，人不用看）</summary>")
+    L.append("")
+    L.append("```json")
+    L.append(json.dumps(record, ensure_ascii=False, indent=2))
+    L.append("```")
+    L.append("</details>")
+    L.append("")
+    L.append("📖 各字段含义见 [cases 仓库 README「如何读懂一条案例」](http://git.tsintergy.com:8070/personal-warehouse/quality-gate/quality-gate-cases/-/blob/main/README.md)")
+    return "\n".join(L)
 
 
 def is_qg_case(issue):

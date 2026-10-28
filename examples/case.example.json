@@ -1,7 +1,7 @@
 {
   "case_id": "",
   "created_at": "",
-  "skill_version": "1.2.0",
+  "skill_version": "1.3.1",
   "task_summary": "机组申报价格查询页新增批量删除功能",
   "task_type": "feature",
   "scope": "backend",
@@ -12,21 +12,53 @@
     "commit": "a1b2c3d4e5f6789",
     "branch": "master",
     "uncommitted": false,
-    "changed_files": ["src/main/java/.../AgencyPurchasePriceController.java", "src/main/java/.../AgencyPurchasePriceService.java"],
+    "changed_files": [
+      "src/main/java/.../AgencyPurchasePriceController.java",
+      "src/main/java/.../AgencyPurchasePriceService.java"
+    ],
     "diff_fingerprint": "",
     "note": ""
   },
-  "execution_metrics": { "elapsed_seconds": 480, "build_seconds": 95, "test_cases_planned": 6, "test_cases_executed": 6, "retries": 0, "independent_agents_used": 0, "input_tokens": null, "output_tokens": null, "budget_exceeded": false, "budget_exceeded_reason": null },
+  "execution_metrics": {
+    "elapsed_seconds": 480,
+    "build_seconds": 95,
+    "test_cases_planned": 6,
+    "test_cases_executed": 6,
+    "retries": 0,
+    "independent_agents_used": 0,
+    "input_tokens": null,
+    "output_tokens": null,
+    "budget_exceeded": false,
+    "budget_exceeded_reason": null
+  },
   "functional_verification": {
     "result": "pass",
-    "executed": ["后端构建", "GET /base/his/agency/queryPowerData 实测", "返回数据与库中记录核对", "必填参数缺失异常场景"],
-    "not_applicable": ["前端 GUI（本次未涉及前端）", "权限矩阵（未触及权限与租户过滤）"],
+    "executed": [
+      "后端构建",
+      "GET /base/his/agency/queryPowerData 实测",
+      "返回数据与库中记录核对",
+      "必填参数缺失异常场景"
+    ],
+    "not_applicable": [
+      "前端 GUI（本次未涉及前端）",
+      "权限矩阵（未触及权限与租户过滤）"
+    ],
     "blocked": []
   },
   "code_review": {
     "level": "light",
-    "detected_findings": { "p0": 0, "p1": 0, "p2": 1, "p3": 0 },
-    "open_findings": { "p0": 0, "p1": 0, "p2": 1, "p3": 0 },
+    "detected_findings": {
+      "p0": 0,
+      "p1": 0,
+      "p2": 1,
+      "p3": 0
+    },
+    "open_findings": {
+      "p0": 0,
+      "p1": 0,
+      "p2": 1,
+      "p3": 0
+    },
     "items": [
       {
         "severity": "P2",
@@ -44,7 +76,14 @@
       }
     ]
   },
-  "requirement_stats": { "total": 6, "pass": 6, "fail": 0, "blocked_or_untested": 0, "unclear": 0, "not_applicable": 2 },
+  "requirement_stats": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0,
+    "blocked_or_untested": 0,
+    "unclear": 0,
+    "not_applicable": 2
+  },
   "outcome_status": "pending",
   "follow_up": {},
   "retrospective": {}
