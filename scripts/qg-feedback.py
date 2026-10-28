@@ -165,6 +165,7 @@ def build_description(record):
     fv = record.get("functional_verification") or {}
     cr = record.get("code_review") or {}
     rows = [
+        ("任务摘要", record.get("task_summary", "")),
         ("Skill 版本", record.get("skill_version", "")),
         ("开发范围 / 风险", f"{record.get('scope', '')} / {record.get('risk_level', '')}"),
         ("技术栈", record.get("stack", "")),
@@ -212,7 +213,7 @@ def cmd_create(args, cfg):
             record = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         raise QGError(f"读取案例文件失败: {e}")
-    for field in ("skill_version", "scope", "risk_level"):
+    for field in ("skill_version", "scope", "risk_level", "task_summary"):
         if not record.get(field):
             raise QGError(f"案例缺少必填字段: {field}")
     record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
@@ -233,8 +234,11 @@ def cmd_create(args, cfg):
     })
     case_id = f"QG-{today}-{issue['iid']:03d}"
     record["case_id"] = case_id
+    summary = (record.get("task_summary") or record.get("stack") or "").strip()
+    if len(summary) > 40:
+        summary = summary[:40] + "…"
     updated = api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{issue['iid']}", {
-        "title": f"[{case_id}] {LABEL_PENDING} | {record['scope']}/{record['risk_level']} | {record.get('stack', '')}",
+        "title": f"[{case_id}] {LABEL_PENDING} | {record['scope']}/{record['risk_level']} | {summary}",
         "description": build_description(record),
     })
     if not args.no_writeback:
