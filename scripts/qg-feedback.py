@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""quality-gate 案例反馈 CLI —— 把每次质量审查记录为 GitLab Issue 案例并维护回访状态。
+
+命令:
+  whoami                              验证令牌与 GitLab 连通性
+  create --file case.json             创建「待回访」案例，输出案例编号与链接（--dry-run 只预览）
+  success QG-ID [--note ...]          回访：验收通过 → 确认成功
+  defect QG-ID --reason ...           回访：发现遗漏缺陷（--why-missed / --rule-hint 可选）
+  list [--status ...]                 列出案例（--status 可选 待回访/确认成功/发现遗漏缺陷/未回访）
+  export [--out x.jsonl] [--mark-stale]  导出全部案例与统计；--mark-stale 把过期待回访正式标记为未回访
+
+配置（优先级：环境变量 > config/default.yml > 内置默认）:
+  QG_GITLAB_URL         GitLab 根地址，如 https://gitlab.example.com
+  QG_GITLAB_TOKEN       访问令牌（只放环境变量，绝不写进仓库）
+  QG_CASES_PROJECT_ID   案例库项目数字 ID（推荐独立项目）
+  QG_OBSERVATION_DAYS   观察期天数（默认 30），过期待回访按未回访统计
+
+原则：提交失败只报告「案例尚未同步」，绝不谎称已入库。
+"""
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_PATH = os.path.join(REPO_ROOT, "config", "default.yml")
+
+LABEL_ROOT = "QG"
+LABEL_PENDING = "待回访"
+LABEL_SUCCESS = "确认成功"
+LABEL_DEFECT = "发现遗漏缺陷"
+LABEL_NOFOLLOWUP = "未回访"
+ALL_LABELS = [LABEL_ROOT, LABEL_PENDING, LABEL_SUCCESS, LABEL_DEFECT, LABEL_NOFOLLOWUP]
+
+CASE_RE = re.compile(r"^QG-(\d{8})-(\d{1,6})$")
+TITLE_ID_RE = re.compile(r"\[(QG-\d{8}-\d+)\]")
+JSON_BLOCK_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
+
+
+class QGError(Exception):
+    pass
+
+
+# ---------- 配置 ----------
+
+def load_flat_yml(path):
+    """极简 key: value 解析，仅供本仓库的扁平配置，避免引入 pyyaml 依赖。"""
+    cfg = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if not line or ":" not in line:
+                    continue
+                k, v = line.split(":", 1)
+                cfg[k.strip()] = v.strip()
+    except OSError:
+        pass
+    return cfg
+
+
+def get_config():
+    cfg = load_flat_yml(CONFIG_PATH)
+    cfg["gitlab_url"] = os.environ.get("QG_GITLAB_URL", cfg.get("gitlab_url", "")).rstrip("/")
+    cfg["project_id"] = os.environ.get("QG_CASES_PROJECT_ID", cfg.get("project_id", ""))
+    cfg["token"] = os.environ.get("QG_GITLAB_TOKEN", "")
+    try:
+        cfg["observation_days"] = int(
+            os.environ.get("QG_OBSERVATION_DAYS", cfg.get("observation_days", "30")))
+    except ValueError:
+        cfg["observation_days"] = 30
+    return cfg
+
+
+def ensure_ready(cfg):
+    missing = [n for n, v in (("QG_GITLAB_URL", cfg["gitlab_url"]),
+                              ("QG_GITLAB_TOKEN", cfg["token"]),
+                              ("QG_CASES_PROJECT_ID", cfg["project_id"])) if not v]
+    if missing:
+        raise QGError("未配置: " + "、".join(missing) + "（环境变量或 config/default.yml）")
+
+
+# ---------- GitLab API ----------
+
+def api(cfg, method, path, payload=None):
+    url = f"{cfg['gitlab_url']}/api/v4{path}"
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8") if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("PRIVATE-TOKEN", cfg["token"])
+    req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8")).get("message", "")
+        except Exception:
+            msg = ""
+        raise QGError(f"GitLab API {e.code}: {msg or e.reason}") from None
+    except urllib.error.URLError as e:
+        raise QGError(f"无法连接 GitLab: {e.reason}") from None
+
+
+def ensure_labels(cfg):
+    """确保状态标签存在；已存在（409/already）视为成功。"""
+    for name in ALL_LABELS:
+        try:
+            api(cfg, "POST", f"/projects/{cfg['project_id']}/labels", {"name": name})
+        except QGError as e:
+            s = str(e).lower()
+            if not ("already" in s or "409" in s or "exist" in s):
+                raise
+
+
+# ---------- 案例工具 ----------
+
+def iid_from_case_id(case_id):
+    m = CASE_RE.match(case_id or "")
+    if not m:
+        raise QGError(f"案例编号格式应为 QG-YYYYMMDD-NNN，收到: {case_id}")
+    return int(m.group(2))
+
+
+def case_id_of(issue):
+    m = TITLE_ID_RE.search(issue.get("title") or "")
+    return m.group(1) if m else f"#{issue.get('iid')}"
+
+
+def status_of(issue):
+    labels = issue.get("labels") or []
+    for lab in (LABEL_SUCCESS, LABEL_DEFECT, LABEL_NOFOLLOWUP, LABEL_PENDING):
+        if lab in labels:
+            return lab
+    return LABEL_PENDING
+
+
+def record_of(issue):
+    m = JSON_BLOCK_RE.search(issue.get("description") or "")
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return {}
+
+
+def parse_dt(s):
+    try:
+        return datetime.fromisoformat((s or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def build_description(record):
+    fv = record.get("functional_verification") or {}
+    cr = record.get("code_review") or {}
+    rows = [
+        ("Skill 版本", record.get("skill_version", "")),
+        ("开发范围 / 风险", f"{record.get('scope', '')} / {record.get('risk_level', '')}"),
+        ("技术栈", record.get("stack", "")),
+        ("涉及权限/租户/敏感数据", record.get("permission_related", "")),
+        ("代码版本", json.dumps(record.get("code_version", {}), ensure_ascii=False)),
+        ("功能验证", f"结果={fv.get('result', '')}；执行={len(fv.get('executed', []))} 项；不适用={len(fv.get('not_applicable', []))} 项；阻塞={len(fv.get('blocked', []))} 项"),
+        ("代码审查", f"等级={cr.get('level', '')}；问题 P0/P1/P2/P3="
+         + "/".join(str((cr.get("findings") or {}).get(p, 0)) for p in ("p0", "p1", "p2", "p3"))),
+        ("拦截缺陷数", len(cr.get("intercepted_defects") or [])),
+        ("需求统计", json.dumps(record.get("requirement_stats", {}), ensure_ascii=False)),
+    ]
+    lines = ["| 字段 | 内容 |", "| --- | --- |"]
+    lines += [f"| {k} | {str(v)[:300]} |" for k, v in rows]
+    lines += ["", "```json", json.dumps(record, ensure_ascii=False, indent=2), "```"]
+    return "\n".join(lines)
+
+
+def fetch_all(cfg):
+    issues, page = [], 1
+    while True:
+        batch = api(cfg, "GET",
+                    f"/projects/{cfg['project_id']}/issues?labels={LABEL_ROOT}"
+                    f"&state=opened&per_page=50&page={page}")
+        if not batch:
+            break
+        issues.extend(batch)
+        if len(batch) < 50:
+            break
+        page += 1
+    return issues
+
+
+# ---------- 子命令 ----------
+
+def cmd_whoami(args, cfg):
+    ensure_ready(cfg)
+    user = api(cfg, "GET", "/user")
+    print(f"连接成功: {user.get('username', '?')} @ {cfg['gitlab_url']}（案例项目 {cfg['project_id']}）")
+    return 0
+
+
+def cmd_create(args, cfg):
+    try:
+        with open(args.file, encoding="utf-8") as f:
+            record = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise QGError(f"读取案例文件失败: {e}")
+    for field in ("skill_version", "scope", "risk_level"):
+        if not record.get(field):
+            raise QGError(f"案例缺少必填字段: {field}")
+    record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    record.setdefault("outcome_status", "pending")
+
+    if args.dry_run:
+        print("[dry-run] 以下为将提交的案例内容（未调用 GitLab）：")
+        print(build_description(record))
+        return 0
+
+    ensure_ready(cfg)
+    ensure_labels(cfg)
+    today = datetime.now().strftime("%Y%m%d")
+    issue = api(cfg, "POST", f"/projects/{cfg['project_id']}/issues", {
+        "title": f"[创建中] {record['scope']}/{record['risk_level']} {today}",
+        "description": build_description(record),
+        "labels": f"{LABEL_ROOT},{LABEL_PENDING}",
+    })
+    case_id = f"QG-{today}-{issue['iid']:03d}"
+    record["case_id"] = case_id
+    updated = api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{issue['iid']}", {
+        "title": f"[{case_id}] {LABEL_PENDING} | {record['scope']}/{record['risk_level']} | {record.get('stack', '')}",
+        "description": build_description(record),
+    })
+    if not args.no_writeback:
+        record["issue_iid"] = issue["iid"]
+        record["web_url"] = updated.get("web_url", "")
+        with open(args.file, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+    print(f"案例已创建: {case_id}")
+    print(f"链接: {updated.get('web_url', issue.get('web_url', ''))}")
+    print(f"回访方式: 在任意会话说「质量反馈 {case_id}: 验收通过」或「质量反馈 {case_id}: 发现缺陷: …」")
+    return 0
+
+
+def update_case(cfg, case_id, status_label, note):
+    iid = iid_from_case_id(case_id)
+    api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}",
+        {"labels": f"{LABEL_ROOT},{status_label}"})
+    if note:
+        api(cfg, "POST", f"/projects/{cfg['project_id']}/issues/{iid}/notes", {"body": note})
+    print(f"已更新 {case_id} → {status_label}")
+
+
+def cmd_success(args, cfg):
+    ensure_ready(cfg)
+    note = f"## 验收回访：验收通过\n- 反馈: {args.note or '（未附说明）'}\n- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+    return update_case(cfg, args.case_id, LABEL_SUCCESS, note)
+
+
+def cmd_defect(args, cfg):
+    ensure_ready(cfg)
+    note = "\n".join([
+        "## 验收回访：发现遗漏缺陷",
+        f"- 缺陷: {args.reason}",
+        f"- 为什么原审查没拦住: {args.why_missed or '（待补充）'}",
+        f"- 规则改进提示: {args.rule_hint or '（待补充）'}",
+        f"- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+    ])
+    return update_case(cfg, args.case_id, LABEL_DEFECT, note)
+
+
+def cmd_list(args, cfg):
+    ensure_ready(cfg)
+    labels = LABEL_ROOT + ("," + urllib.parse.quote(args.status) if args.status else "")
+    issues, page = [], 1
+    while True:
+        batch = api(cfg, "GET",
+                    f"/projects/{cfg['project_id']}/issues?labels={labels}&state=opened&per_page=50&page={page}")
+        if not batch:
+            break
+        issues.extend(batch)
+        if len(batch) < 50:
+            break
+        page += 1
+    if not issues:
+        print("（无案例）")
+        return 0
+    for it in sorted(issues, key=lambda x: x.get("created_at", ""), reverse=True):
+        print(f"{case_id_of(it)}\t{status_of(it)}\t{it.get('created_at', '')[:10]}\t{it.get('title', '')}")
+    return 0
+
+
+def cmd_export(args, cfg):
+    ensure_ready(cfg)
+    issues = fetch_all(cfg)
+    now = datetime.now(timezone.utc)
+    obs = timedelta(days=cfg["observation_days"])
+    stats = {LABEL_PENDING: 0, LABEL_SUCCESS: 0, LABEL_DEFECT: 0, LABEL_NOFOLLOWUP: 0}
+    by_risk, defects, intercepted_total, records = {}, [], 0, []
+    for it in issues:
+        rec = record_of(it)
+        status = status_of(it)
+        created = parse_dt(it.get("created_at"))
+        stale = status == LABEL_PENDING and created and (now - created) > obs
+        if stale:
+            if args.mark_stale:
+                api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{it['iid']}",
+                    {"labels": f"{LABEL_ROOT},{LABEL_NOFOLLOWUP}"})
+                status = LABEL_NOFOLLOWUP
+            else:
+                status = LABEL_NOFOLLOWUP  # 统计口径：过期未反馈按未回访计
+        stats[status] += 1
+        by_risk[rec.get("risk_level", "未知")] = by_risk.get(rec.get("risk_level", "未知"), 0) + 1
+        intercepted_total += len((rec.get("code_review") or {}).get("intercepted_defects") or [])
+        if status == LABEL_DEFECT:
+            defects.append(case_id_of(it))
+        out = dict(rec)
+        out["effective_status"] = status
+        out["issue_iid"] = it.get("iid")
+        out["web_url"] = it.get("web_url", "")
+        records.append(out)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            for r in records:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+    print(f"案例总数: {len(records)}（观察期 {cfg['observation_days']} 天）")
+    print("状态分布: " + " / ".join(f"{k} {v}" for k, v in stats.items()))
+    print("风险分布: " + " / ".join(f"{k} {v}" for k, v in sorted(by_risk.items())))
+    print(f"质量门禁拦截缺陷合计: {intercepted_total}")
+    if defects:
+        print("遗漏缺陷案例: " + ", ".join(defects))
+    if args.out:
+        print(f"已导出: {args.out}")
+    return 0
+
+
+def main():
+    p = argparse.ArgumentParser(prog="qg-feedback", description="quality-gate 案例反馈 CLI（GitLab Issues 后端）")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("whoami", help="验证令牌与连通性")
+    c = sub.add_parser("create", help="创建待回访案例")
+    c.add_argument("--file", required=True, help="案例 JSON（结构见 schemas/quality-case.schema.json）")
+    c.add_argument("--dry-run", action="store_true", help="只预览，不调用 GitLab")
+    c.add_argument("--no-writeback", action="store_true", help="不把 case_id/链接写回案例文件")
+    s = sub.add_parser("success", help="回访: 验收通过")
+    s.add_argument("case_id")
+    s.add_argument("--note", default="")
+    d = sub.add_parser("defect", help="回访: 发现遗漏缺陷")
+    d.add_argument("case_id")
+    d.add_argument("--reason", required=True)
+    d.add_argument("--why-missed", default="")
+    d.add_argument("--rule-hint", default="")
+    l = sub.add_parser("list", help="列出案例")
+    l.add_argument("--status", default="", help="待回访/确认成功/发现遗漏缺陷/未回访")
+    e = sub.add_parser("export", help="导出案例与统计")
+    e.add_argument("--out", default="")
+    e.add_argument("--mark-stale", action="store_true", help="把过期待回访正式改标为未回访")
+    args = p.parse_args()
+    cfg = get_config()
+    handlers = {"whoami": cmd_whoami, "create": cmd_create, "success": cmd_success,
+                "defect": cmd_defect, "list": cmd_list, "export": cmd_export}
+    try:
+        return handlers[args.cmd](args, cfg)
+    except QGError as err:
+        print(f"[失败] {err}", file=sys.stderr)
+        print("案例尚未同步 / 操作未完成——请据实处理，不得视为已成功。", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

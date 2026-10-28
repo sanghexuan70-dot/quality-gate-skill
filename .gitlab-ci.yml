@@ -1,0 +1,25 @@
+# quality-gate 技能仓库流水线
+# validate：每次提交自检仓库完整性
+# weekly-case-report：定时汇总案例库（阶段二启用；需在 CI/CD Variables 配 QG_GITLAB_TOKEN /
+#                     QG_GITLAB_URL / QG_CASES_PROJECT_ID，并创建每日/每周 schedule pipeline）
+stages: [validate, report]
+
+validate:
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - python -m py_compile scripts/qg-feedback.py
+    - python scripts/validate_repo.py
+
+weekly-case-report:
+  stage: report
+  image: python:3.11-slim
+  rules:
+    - if: '$QG_GITLAB_TOKEN != null && $CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - mkdir -p report
+    - python scripts/qg-feedback.py export --out report/cases.jsonl --mark-stale
+    - python scripts/qg-feedback.py list > report/case-list.txt
+  artifacts:
+    paths: [report/]
+    expire_in: 30 days

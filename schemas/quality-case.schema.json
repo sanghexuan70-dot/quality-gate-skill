@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "quality-gate 案例记录",
+  "description": "每次质量审查结束后创建的结构化案例；提交到 GitLab Issue 描述中的 ```json 代码块必须符合本结构。证据脱敏后再填。",
+  "type": "object",
+  "required": ["skill_version", "scope", "risk_level"],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "pattern": "^QG-\\d{8}-\\d{1,6}$",
+      "description": "创建时留空，由 qg-feedback create 生成并写回：QG-日期-issue编号"
+    },
+    "created_at": { "type": "string", "description": "ISO 8601，创建时留空由脚本填写" },
+    "skill_version": { "type": "string", "description": "运行时的 SKILL.md 版本（VERSION 文件）" },
+    "scope": { "type": "string", "enum": ["frontend", "backend", "fullstack"] },
+    "stack": { "type": "string", "description": "技术栈，如 React/UmiJS、Java/Spring Boot" },
+    "risk_level": { "type": "string", "enum": ["light", "regular", "high"] },
+    "permission_related": { "type": "boolean", "description": "是否触及权限/租户/敏感数据" },
+    "code_version": {
+      "type": "object",
+      "properties": {
+        "commit": { "type": "string" },
+        "uncommitted": { "type": "boolean", "description": "存在未提交修改时必须为 true" },
+        "note": { "type": "string", "description": "未提交变更摘要或版本说明" }
+      }
+    },
+    "functional_verification": {
+      "type": "object",
+      "properties": {
+        "result": { "type": "string", "enum": ["pass", "partial", "fail"] },
+        "executed": { "type": "array", "items": { "type": "string" }, "description": "实际执行的检查项" },
+        "not_applicable": { "type": "array", "items": { "type": "string" }, "description": "不适用项及理由" },
+        "blocked": { "type": "array", "items": { "type": "string" }, "description": "因环境/工具不可用未执行项及原因" }
+      }
+    },
+    "code_review": {
+      "type": "object",
+      "properties": {
+        "level": { "type": "string", "enum": ["none", "light", "regular", "deep"] },
+        "findings": {
+          "type": "object",
+          "properties": {
+            "p0": { "type": "integer" },
+            "p1": { "type": "integer" },
+            "p2": { "type": "integer" },
+            "p3": { "type": "integer" }
+          }
+        },
+        "intercepted_defects": {
+          "type": "array",
+          "description": "质量门禁提前拦截的缺陷明细——成功案例的核心价值所在",
+          "items": {
+            "type": "object",
+            "required": ["description"],
+            "properties": {
+              "type": { "type": "string", "description": "缺陷类型，如 数据正确性/权限隔离/事务一致性" },
+              "severity": { "type": "string" },
+              "check_item": { "type": "string", "description": "由哪条检查项拦截" },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "requirement_stats": {
+      "type": "object",
+      "description": "按报告统计口径分列；不适用不计入已通过",
+      "properties": {
+        "total": { "type": "integer" },
+        "pass": { "type": "integer" },
+        "fail": { "type": "integer" },
+        "blocked_or_untested": { "type": "integer" },
+        "unclear": { "type": "integer", "description": "需求不明确条数" },
+        "not_applicable": { "type": "integer" }
+      }
+    },
+    "outcome_status": { "type": "string", "enum": ["pending", "success", "defect_found", "no_followup"] },
+    "follow_up": {
+      "type": "object",
+      "description": "回访后由 qg-feedback success/defect 补充",
+      "properties": {
+        "feedback_at": { "type": "string" },
+        "result": { "type": "string" },
+        "defects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "description": { "type": "string" },
+              "why_missed": { "type": "string", "description": "原审查为什么没拦住" },
+              "rule_change_hint": { "type": "string", "description": "改哪条规则/加哪条检查可防复发" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

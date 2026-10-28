@@ -1,0 +1,31 @@
+{
+  "case_id": "",
+  "created_at": "",
+  "skill_version": "1.0.0",
+  "scope": "backend",
+  "stack": "Java/Spring Boot",
+  "risk_level": "light",
+  "permission_related": false,
+  "code_version": { "commit": "a1b2c3d", "uncommitted": false, "note": "" },
+  "functional_verification": {
+    "result": "pass",
+    "executed": ["后端构建", "GET /base/his/agency/queryPowerData 实测", "返回数据与库中记录核对", "必填参数缺失异常场景"],
+    "not_applicable": ["前端 GUI（本次未涉及前端）", "权限矩阵（未触及权限与租户过滤）"],
+    "blocked": []
+  },
+  "code_review": {
+    "level": "light",
+    "findings": { "p0": 0, "p1": 0, "p2": 1, "p3": 0 },
+    "intercepted_defects": [
+      {
+        "type": "数据正确性",
+        "severity": "P2",
+        "check_item": "后端四方面核对-业务结果",
+        "description": "金额字段未按接口契约保留两位小数，已修复并复验"
+      }
+    ]
+  },
+  "requirement_stats": { "total": 6, "pass": 6, "fail": 0, "blocked_or_untested": 0, "unclear": 0, "not_applicable": 2 },
+  "outcome_status": "pending",
+  "follow_up": {}
+}

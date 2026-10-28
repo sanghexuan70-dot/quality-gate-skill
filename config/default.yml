@@ -1,0 +1,5 @@
+# quality-gate 团队模式配置
+# 优先级：环境变量 > 本文件；令牌只放环境变量 QG_GITLAB_TOKEN，绝不写进本文件或提交仓库
+gitlab_url: "http://git.tsintergy.com:8070"  # 也可用环境变量 QG_GITLAB_URL 覆盖
+project_id: "7854"                          # 案例库项目 personal-warehouse/quality-gate/quality-gate-cases
+observation_days: 30    # 待回访超过该天数且无反馈 → 按未回访统计
