@@ -192,7 +192,7 @@ def fetch_all(cfg):
     while True:
         batch = api(cfg, "GET",
                     f"/projects/{cfg['project_id']}/issues?labels={LABEL_ROOT}"
-                    f"&state=opened&per_page=50&page={page}")
+                    f"&state=all&per_page=50&page={page}")
         if not batch:
             break
         issues.extend(batch)
@@ -268,7 +268,12 @@ def update_case(cfg, case_id, status_label, note):
 def cmd_success(args, cfg):
     ensure_ready(cfg)
     note = f"## 验收回访：验收通过\n- 反馈: {args.note or '（未附说明）'}\n- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    return update_case(cfg, args.case_id, LABEL_SUCCESS, note)
+    update_case(cfg, args.case_id, LABEL_SUCCESS, note)
+    if not args.keep_open:
+        iid = iid_from_case_id(args.case_id)
+        api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}", {"state_event": "close"})
+        print(f"已关闭 {args.case_id}——确认成功即案例闭环结束（观察期内复发可 reopen 或新开案例；--keep-open 可保持打开）")
+    return 0
 
 
 def cmd_defect(args, cfg):
@@ -280,7 +285,9 @@ def cmd_defect(args, cfg):
         f"- 规则改进提示: {args.rule_hint or '（待补充）'}",
         f"- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
     ])
-    return update_case(cfg, args.case_id, LABEL_DEFECT, note)
+    update_case(cfg, args.case_id, LABEL_DEFECT, note)
+    print(f"{args.case_id} 保持打开直至缺陷处置完成；处置后可关闭（网页 Close、看板拖入 Closed 列、或评论 /close）")
+    return 0
 
 
 def cmd_list(args, cfg):
@@ -289,7 +296,7 @@ def cmd_list(args, cfg):
     issues, page = [], 1
     while True:
         batch = api(cfg, "GET",
-                    f"/projects/{cfg['project_id']}/issues?labels={labels}&state=opened&per_page=50&page={page}")
+                    f"/projects/{cfg['project_id']}/issues?labels={labels}&state=all&per_page=50&page={page}")
         if not batch:
             break
         issues.extend(batch)
@@ -300,7 +307,8 @@ def cmd_list(args, cfg):
         print("（无案例）")
         return 0
     for it in sorted(issues, key=lambda x: x.get("created_at", ""), reverse=True):
-        print(f"{case_id_of(it)}\t{status_of(it)}\t{it.get('created_at', '')[:10]}\t{it.get('title', '')}")
+        state = "已关闭" if it.get("state") == "closed" else "open"
+        print(f"{case_id_of(it)}\t{status_of(it)}\t{state}\t{it.get('created_at', '')[:10]}\t{it.get('title', '')}")
     return 0
 
 
@@ -359,6 +367,7 @@ def main():
     s = sub.add_parser("success", help="回访: 验收通过")
     s.add_argument("case_id")
     s.add_argument("--note", default="")
+    s.add_argument("--keep-open", action="store_true", help="不自动关闭案例 Issue")
     d = sub.add_parser("defect", help="回访: 发现遗漏缺陷")
     d.add_argument("case_id")
     d.add_argument("--reason", required=True)

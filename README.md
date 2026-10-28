@@ -155,7 +155,7 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 质量反馈 QG-20261028-001：发现缺陷：空日期查询报 500
 ```
 
-- 回访共三种方式：上面这句（推荐）、终端跑 `qg-feedback success|defect`、或直接在案例库网页可视化操作（看板拖拽 / 改标签 / `/relabel` 快速命令），详见 cases 仓库 README。
+- 回访共三种方式：上面这句（推荐）、终端跑 `qg-feedback success|defect`、或直接在案例库网页可视化操作（看板拖拽 / 改标签 / `/relabel` 快速命令），详见 cases 仓库 README。确认成功会自动关闭 Issue（`--keep-open` 可保持打开）；Open/Closed 是 GitLab 的 Issue 生命周期，与案例四态标签无关，已关闭案例仍计入统计。
 
 ## 案例生命周期
 
