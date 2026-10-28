@@ -187,19 +187,27 @@ def build_description(record):
     return "\n".join(lines)
 
 
+def is_qg_case(issue):
+    """案例识别不依赖单一标签：标题符合 QG-编号格式或带任一案例标签即算，
+    防止网页手动编辑标签（整组替换会勾掉 QG）把案例从统计中挤掉。"""
+    if CASE_RE.match(case_id_of(issue) or ""):
+        return True
+    labels = issue.get("labels") or []
+    return any(l in labels for l in ALL_LABELS)
+
+
 def fetch_all(cfg):
     issues, page = [], 1
     while True:
         batch = api(cfg, "GET",
-                    f"/projects/{cfg['project_id']}/issues?labels={LABEL_ROOT}"
-                    f"&state=all&per_page=50&page={page}")
+                    f"/projects/{cfg['project_id']}/issues?state=all&per_page=50&page={page}")
         if not batch:
             break
         issues.extend(batch)
         if len(batch) < 50:
             break
         page += 1
-    return issues
+    return [it for it in issues if is_qg_case(it)]
 
 
 # ---------- 子命令 ----------
@@ -292,17 +300,9 @@ def cmd_defect(args, cfg):
 
 def cmd_list(args, cfg):
     ensure_ready(cfg)
-    labels = LABEL_ROOT + ("," + urllib.parse.quote(args.status) if args.status else "")
-    issues, page = [], 1
-    while True:
-        batch = api(cfg, "GET",
-                    f"/projects/{cfg['project_id']}/issues?labels={labels}&state=all&per_page=50&page={page}")
-        if not batch:
-            break
-        issues.extend(batch)
-        if len(batch) < 50:
-            break
-        page += 1
+    issues = fetch_all(cfg)
+    if args.status:
+        issues = [it for it in issues if status_of(it) == args.status]
     if not issues:
         print("（无案例）")
         return 0
