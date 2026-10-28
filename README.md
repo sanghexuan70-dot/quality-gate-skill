@@ -21,13 +21,7 @@ regression-cases/cases.yml      规则回归用例（改规则后核对行为未
 ## 安装（同事）
 
 1. 克隆本仓库（建议固定目录，如 `~/tools/quality-gate-skill`）。
-2. 把技能接入 Agent 的技能目录（软链，便于 `git pull` 即升级）：
-
-```bash
-ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate
-# 或 ZCode 技能目录：ln -s ~/tools/quality-gate-skill ~/.zcode/skills/quality-gate
-```
-
+2. 按你使用的 Agent 接入技能目录（见下），软链方式保证 `git pull` 即升级。
 3. 配置团队模式令牌（写入 shell profile）：
 
 ```bash
@@ -37,6 +31,52 @@ export QG_GITLAB_TOKEN="<个人访问令牌>"   # scope: api，只放本地环�
 GitLab 地址与案例库项目 ID 已预置在 `config/default.yml`（http://git.tsintergy.com:8070 / 案例库项目 7854 = personal-warehouse/quality-gate/quality-gate-cases）；如需覆盖，用环境变量 `QG_GITLAB_URL` / `QG_CASES_PROJECT_ID`。
 
 4. 验证：`python3 scripts/qg-feedback.py whoami`
+
+## 接入各 Agent
+
+技能本体就是 `SKILL.md` + 脚本，任何能读文件、跑 shell 的 Agent 都能用；差别只在技能目录和触发方式。
+
+### Claude Code
+
+```bash
+ln -s ~/tools/quality-gate-skill ~/.claude/skills/quality-gate    # Claude Code 官方技能目录
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # 跨 Agent 通用目录（可选，多工具共享一份）
+```
+
+触发：说「按 quality-gate 审查」「质量审查一下」「开发完帮我检查」，或 `/quality-gate`。想强制「每次开发完必跑」，把下面的触发规则片段追加到 `~/.claude/CLAUDE.md`（全局）或项目 `CLAUDE.md`。
+
+### Codex
+
+```bash
+ln -s ~/tools/quality-gate-skill ~/.codex/skills/quality-gate    # Codex 技能目录（推荐）
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # 兼容路径：部分版本从该目录发现，两个都建最稳
+```
+
+新版 Codex 从 `~/.codex/skills` 发现技能（每个技能一个含 `SKILL.md` 的目录）；社区反馈部分版本对 `~/.agents/skills` 的发现行为有差异，建议两条都建。也可在 `~/.codex/AGENTS.md`（全局）或项目根 `AGENTS.md` 注入触发规则片段，效果等价。
+
+### DeepSeek Harness（dsh）
+
+dsh 同样以 SKILL.md 作为技能载体（「一切皆插件」，技能是本地目录中的可复用指令集）：
+
+```bash
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨 Agent 技能目录
+```
+
+并在全局/项目 `AGENTS.md`（或会话系统提示模板）注入下面的触发规则片段；具体技能发现目录以你所用 dsh 版本的文档为准，路径不同时改软链目标即可。
+
+### 触发规则注入片段（AGENTS.md / CLAUDE.md / 系统提示通用）
+
+```markdown
+# 质量审查协议（quality-gate）
+- 任何前后端/全栈开发任务完成后，或用户要求「质量审查 / 验证功能 / quality-gate」时：
+  1. 读取 ~/tools/quality-gate-skill/SKILL.md，严格按其阶段 0→A→B→C→D 流程执行；
+  2. 团队模式按 SKILL.md「案例记录与反馈闭环」一节调用 scripts/qg-feedback.py 创建待回访案例，输出案例编号与链接；
+  3. 用户说「质量反馈 QG-xxx：…」时，调用 qg-feedback success|defect 更新原案例，不新建记录。
+- 执行过的检查必须给出可核对结果；跳过的检查标「不适用/未测试」并写原因，不得虚报通过。
+- 升级方式：cd ~/tools/quality-gate-skill && git pull。
+```
+
+> 参考：公司 `fcr` 的 `install-skill` 也是同样的做法——装到 `~/.claude/skills` 与 `~/.agents/skills` 供 Claude Code / Codex 自动加载。
 
 未配置团队变量时技能照常运行（单机模式），只是不创建案例。
 
