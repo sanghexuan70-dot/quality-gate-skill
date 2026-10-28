@@ -170,10 +170,50 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 
 真实开发 → 质量审查 → 待回访案例 → 验收反馈 → 问题归因 → 规则改进（MR）→ 回归核对 → 新版发布。
 
-1. **汇总**：`python3 scripts/qg-feedback.py export --out cases.jsonl --mark-stale`（也可依赖 CI schedule 自动产出）。
-2. **分析**：按版本/范围/风险/缺陷类型统计，回答——哪类任务交付后仍出缺陷？哪些检查从未拦截问题还常阻塞？轻量档是否长期够用？某版本改规则后某类缺陷是否减少（注意按任务类型对照，总量对比不可信）？
-3. **提案**：改进以 MR 提交，描述附案例证据与命中的 regression-cases 编号；**单次案例不得直接改规则，使用者本地不改公共规则**。
-4. **发布**：合入后更新 VERSION、CHANGELOG，打 tag（v1.0.0…），同事 `git pull` 即升级。
+### 1. 汇总（手动或自动）
+
+```bash
+python3 ~/tools/quality-gate-skill/scripts/qg-feedback.py export --out cases.jsonl --mark-stale
+```
+
+输出状态/风险分布、拦截缺陷合计、遗漏缺陷案例清单 + 全量 JSONL（`--mark-stale` 把过期待回访正式标为未回访）。
+
+不想手动跑就配自动周报：仓库 **Settings → CI/CD → Variables** 加 `QG_GITLAB_TOKEN`（若勾 Masked 报格式错误就不勾——本实例令牌含 `-`，旧版字符集可能不让 mask；脚本本身不会打印令牌），再在 **Settings → CI/CD → Schedules** 建每周任务，`.gitlab-ci.yml` 里的 `weekly-case-report` 会自动产出报告到 artifacts。
+
+### 2. 分析
+
+把 `cases.jsonl` 丢给 AI Agent 出改进提案，围绕四个标准问题：
+
+- 哪类任务交付后仍出缺陷？→ 增加针对性检查规则
+- 哪些检查从没拦过问题、还经常阻塞？→ 裁剪或调整执行条件
+- 轻量档是否长期够用？→ 校准风险分级
+- 哪些规则误报多？→ 收紧判定条件
+
+遗漏缺陷案例重点看归因字段 `why_missed`（原审查为什么没拦住）和 `rule_change_hint`（改哪条可防复发）。比较两个版本的缺陷率时**按任务类型和风险等级对照**，不同版本承接的任务难度不同，总量对比不可信；案例不足时只当趋势线索。
+
+### 3. 改规则
+
+在克隆仓库开分支改 `SKILL.md`，**同一提交内**完成三件事：
+
+1. **升 `VERSION`**：加规则/增强 → 升中位号（1.0.0→1.1.0）；裁剪或行为变更 → 考虑升大位号（→2.0.0）；笔误小修 → 升末位号；
+2. **`CHANGELOG.md` 加一条**（改了什么、依据哪个 QG 案例）；
+3. **逐条核对 `regression-cases/cases.yml`**：确认命中的行为没被改坏——例如放松轻量范围后，RC-004「简单 CRUD 不启动前端 GUI」必须仍然成立；MR 描述里列出核对过的用例编号。
+
+### 4. 合入
+
+push 分支 → GitLab 建 MR → 合并 `main`（main 受保护、禁 force push，正常合并没问题）。单人维护嫌 MR 重，直接在 main 上 commit + push 也行（创建者有权限）；MR 流程的价值是留痕与评审，多人参与后建议启用。
+
+### 5. 发布
+
+```bash
+git tag v1.1.0 && git push origin v1.1.0
+```
+
+同事那边 `git pull` 即升级——技能目录是软链，拉完立即生效，无需其他操作。
+
+### 铁律
+
+**单次案例不直接改规则。** 所有修改都要有案例证据支撑（哪个 QG 案例暴露的、什么规律），防止规则跟着个案来回摇摆。使用者不在本地修改公共规则，统一拉取正式版。
 
 分支规则：`main` 为开发版（所有修改走 MR），tag 为正式版；每个案例记录运行时 Skill 版本，保证可追溯。
 
