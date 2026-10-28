@@ -31,6 +31,8 @@ git clone http://git.tsintergy.com:8070/personal-warehouse/quality-gate/quality-
 :: Windows（CMD / PowerShell）
 git clone http://git.tsintergy.com:8070/personal-warehouse/quality-gate/quality-gate-skill.git %USERPROFILE%\tools\quality-gate-skill
 ```
+
+> 后文所有命令默认使用约定路径 `~/tools/quality-gate-skill`（Windows 为 `%USERPROFILE%\tools\quality-gate-skill`）。**若已克隆到其他位置**，在克隆目录里执行一条命令对齐即可：`mkdir -p ~/tools && ln -s "$(pwd)" ~/tools/quality-gate-skill`；或把后文出现的该路径整体替换为你的实际克隆位置。
 2. 按你使用的 Agent 接入技能目录（见下），软链方式保证 `git pull` 即升级。
 3. 配置个人访问令牌（PAT，每个同事自己建一个）：
 
