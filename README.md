@@ -1,28 +1,33 @@
-# quality-gate —— 日常开发质量门禁（团队共享版）
+# quality-gate —— AI Agent 日常开发质量门禁
 
-融入日常开发的质量审查技能：每次开发结束后，按开发范围与风险生成本次专属审查计划，实际运行验证功能（接口实测 + 浏览器交互 + 逐项证据），按轻量/常规/深度分级做代码审查，修复后回归重验，报告绑定代码版本。团队模式下每次审查自动记录为案例，通过回访反馈持续迭代规则。
+> **一句话：开发任务完成后，让 AI 按改动范围和风险做「真实运行的功能验证 + 分级代码审查」，产出带证据、绑定代码版本的质量报告；团队模式下每次审查自动沉淀为可回访的案例。**
 
-核心设计：**固定质量底线 + 按开发范围选择验证模块 + 根据风险决定审查深度。**
+它不是上线前的全量测试平台，而是融入日常开发的质量底线。核心设计：
 
-> **配套仓库**：`personal-warehouse/quality-gate/quality-gate-cases`（案例数据中心）——每次审查自动在其 Issues 创建「待回访」案例，验收回访后更新状态，维护者定期导出分析、反哺本仓库的规则迭代。本仓库只放规则与工具，不放案例数据。
+> **固定质量底线 + 按开发范围选择验证模块 + 根据风险决定审查深度。**
 
-## 仓库结构
+简单 CRUD 十几分钟收口；触及权限、公共组件、跨服务流程的任务自动升级为完整门禁。
+
+## 它替你回答三个问题
+
+| 你担心的 | 它的做法 |
+| --- | --- |
+| AI 说"做好了"，真的能跑吗 | 接口真实调用、页面真实交互、数据与库里核对——**只读代码不算验证** |
+| 会不会为了省事漏测 | 跳过的检查必须标「不适用 / 未测试」并写理由，报告里一眼可见，不得虚报通过 |
+| 这套东西到底有没有用 | 每次审查自动建案例、验收后回访，定期用真实数据复盘迭代规则 |
+
+## 两个仓库的关系
 
 ```
-SKILL.md                        质量审查规则（唯一正式规则源，只经 MR 修改）
-VERSION / CHANGELOG.md          当前版本与升级记录
-config/default.yml              团队模式配置（不含令牌）
-scripts/qg-feedback.py          案例反馈 CLI（GitLab Issues 后端）
-scripts/validate_repo.py        仓库自检（CI 用）
-schemas/quality-case.schema.json 案例记录结构
-examples/case.example.json      案例示例
-regression-cases/cases.yml      规则回归用例（改规则后核对行为未退化）
-.gitlab-ci.yml                  自检流水线 + 周期案例汇总
+quality-gate-skill（本仓库）          quality-gate-cases
+规则与工具源                          案例数据中心（Issue 即案例）
+SKILL.md + qg-feedback 脚本          每次审查自动写入，只存数据不放代码
+使用者 git pull 即升级                维护者定期导出分析，反哺规则迭代
 ```
 
-## 安装（同事）
+## 快速开始（使用者，约 5 分钟）
 
-1. 克隆本仓库（建议固定目录）：
+### ① 克隆
 
 ```bash
 # macOS / Linux
@@ -30,105 +35,35 @@ git clone http://git.tsintergy.com:8070/personal-warehouse/quality-gate/quality-
 ```
 
 ```cmd
-:: Windows（CMD / PowerShell）
+:: Windows
 git clone http://git.tsintergy.com:8070/personal-warehouse/quality-gate/quality-gate-skill.git %USERPROFILE%\tools\quality-gate-skill
 ```
 
-> 后文所有命令默认使用约定路径 `~/tools/quality-gate-skill`（Windows 为 `%USERPROFILE%\tools\quality-gate-skill`）。**若已克隆到其他位置**，在克隆目录里执行一条命令对齐即可：`mkdir -p ~/tools && ln -s "$(pwd)" ~/tools/quality-gate-skill`；或把后文出现的该路径整体替换为你的实际克隆位置。
-2. 按你使用的 Agent 接入技能目录（见下），软链方式保证 `git pull` 即升级。
-3. 配置个人访问令牌（PAT，每个同事自己建一个）：
+> 后文默认用约定路径 `~/tools/quality-gate-skill`（Windows 为 `%USERPROFILE%\tools\quality-gate-skill`）。**克隆到了别处？** 在克隆目录执行 `mkdir -p ~/tools && ln -s "$(pwd)" ~/tools/quality-gate-skill` 对齐，或把后文路径替换为实际位置。
 
-   1. 打开 http://git.tsintergy.com:8070/-/profile/personal_access_tokens （右上角头像 → Settings → Access Tokens）；
-   2. Name 填 `quality-gate`，Expires 按公司要求（建议不超过一年），Scopes 只勾 **`api`**——创建/更新案例 Issue 与标签所需，GitLab 没有更细粒度的 scope，`api` 即最小可用；
-   3. 点 Create 后**立刻复制**令牌——20 位随机字符串，**本 GitLab（13.x）发放的令牌不带 `glpat-` 前缀，属正常现象**；页面只显示这一次；
-   4. 写入环境变量（之后新开的终端和 Agent 会话自动带上）：
+### ② 接入你的 Agent（三选一，命令分平台）
 
-   **macOS（zsh）**：
-
-   ```bash
-   echo 'export QG_GITLAB_TOKEN="你的令牌"' >> ~/.zshrc
-   source ~/.zshrc
-   ```
-
-   **Windows**：任选其一。`setx` 最简单（写入用户环境变量，**重开终端后生效**）：
-
-   ```cmd
-   setx QG_GITLAB_TOKEN "你的令牌"
-   ```
-
-   或 PowerShell 配置文件（每次会话自动设置）：
-
-   ```powershell
-   if (!(Test-Path $PROFILE)) { New-Item -ItemType File -Force $PROFILE }
-   Add-Content $PROFILE '$env:QG_GITLAB_TOKEN = "你的令牌"'
-   ```
-
-   令牌只放本地环境变量：不写进代码、不写进 `config/default.yml`、不在聊天/群里转发；怀疑泄露回同一页面 Revoke 重建；到期前换新并更新环境变量。
-
-   GitLab 地址与案例库项目 ID 已预置在 `config/default.yml`（http://git.tsintergy.com:8070 / 案例库项目 7854 = personal-warehouse/quality-gate/quality-gate-cases），无需另行配置；如需覆盖，用环境变量 `QG_GITLAB_URL` / `QG_CASES_PROJECT_ID`。
-
-4. 验证：
+**Claude Code**
 
 ```bash
-# macOS / Linux
-python3 ~/tools/quality-gate-skill/scripts/qg-feedback.py whoami
+ln -s ~/tools/quality-gate-skill ~/.claude/skills/quality-gate
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # 跨 Agent 通用目录（可选）
 ```
 
-```cmd
-:: Windows（一般用 python 而非 python3）
-python %USERPROFILE%\tools\quality-gate-skill\scripts\qg-feedback.py whoami
-```
-
-## 接入各 Agent
-
-技能本体就是 `SKILL.md` + 脚本，任何能读文件、跑 shell 的 Agent 都能用；差别只在技能目录和触发方式。下面的软链命令是 macOS / Linux 写法；**Windows 用 Junction 链接代替**（无需管理员权限，把 `~/` 换成 `%USERPROFILE%\`）：
-
-```cmd
-:: Windows 通用写法（先确保父目录存在再链接）
-mkdir "%USERPROFILE%\.claude\skills" 2>nul & mklink /J "%USERPROFILE%\.claude\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"
-```
-
-### Claude Code
+**Codex**（新版从 `~/.codex/skills` 发现技能；`~/.agents/skills` 发现在部分版本有差异，两条都建最稳）
 
 ```bash
-ln -s ~/tools/quality-gate-skill ~/.claude/skills/quality-gate    # Claude Code 官方技能目录
-ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # 跨 Agent 通用目录（可选，多工具共享一份）
+ln -s ~/tools/quality-gate-skill ~/.codex/skills/quality-gate
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate
 ```
 
-```cmd
-:: Windows 等价写法
-mkdir "%USERPROFILE%\.claude\skills" 2>nul & mklink /J "%USERPROFILE%\.claude\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"
-mkdir "%USERPROFILE%\.agents\skills" 2>nul & mklink /J "%USERPROFILE%\.agents\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"
-```
-
-触发：说「按 quality-gate 审查」「质量审查一下」「开发完帮我检查」，或 `/quality-gate`。想强制「每次开发完必跑」，把下面的触发规则片段追加到 `~/.claude/CLAUDE.md`（全局）或项目 `CLAUDE.md`。
-
-### Codex
+**DeepSeek Harness（dsh）及其他支持 AGENTS.md / 自定义系统提示的 Agent**
 
 ```bash
-ln -s ~/tools/quality-gate-skill ~/.codex/skills/quality-gate    # Codex 技能目录（推荐）
-ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # 兼容路径：部分版本从该目录发现，两个都建最稳
+ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate
 ```
 
-```cmd
-:: Windows 等价写法
-mkdir "%USERPROFILE%\.codex\skills" 2>nul & mklink /J "%USERPROFILE%\.codex\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"
-mkdir "%USERPROFILE%\.agents\skills" 2>nul & mklink /J "%USERPROFILE%\.agents\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"
-```
-
-新版 Codex 从 `~/.codex/skills` 发现技能（每个技能一个含 `SKILL.md` 的目录）；社区反馈部分版本对 `~/.agents/skills` 的发现行为有差异，建议两条都建。也可在 `~/.codex/AGENTS.md`（全局）或项目根 `AGENTS.md` 注入触发规则片段，效果等价。
-
-### DeepSeek Harness（dsh）
-
-dsh 同样以 SKILL.md 作为技能载体（「一切皆插件」，技能是本地目录中的可复用指令集）：
-
-```bash
-ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨 Agent 技能目录
-```
-
-并在全局/项目 `AGENTS.md`（或会话系统提示模板）注入下面的触发规则片段；具体技能发现目录以你所用 dsh 版本的文档为准，路径不同时改软链目标即可。
-
-### 触发规则注入片段（AGENTS.md / CLAUDE.md / 系统提示通用）
+并在全局/项目 `AGENTS.md`（或会话系统提示模板）注入触发规则：
 
 ```markdown
 # 质量审查协议（quality-gate）
@@ -140,33 +75,67 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 - 升级方式：cd ~/tools/quality-gate-skill && git pull。
 ```
 
-> 参考：公司 `fcr` 的 `install-skill` 也是同样的做法——装到 `~/.claude/skills` 与 `~/.agents/skills` 供 Claude Code / Codex 自动加载。Windows 下触发规则片段中的路径对应 `%USERPROFILE%\tools\quality-gate-skill`。
+**Windows 用户**：软链改用 Junction（无需管理员）——`mkdir "%USERPROFILE%\.claude\skills" 2>nul & mklink /J "%USERPROFILE%\.claude\skills\quality-gate" "%USERPROFILE%\tools\quality-gate-skill"`，其余目录同理。
 
-未配置团队变量时技能照常运行（单机模式），只是不创建案例。
+### ③ 配令牌（团队模式；不配也能用，只是不建案例）
 
-## 使用
+1. 打开 http://git.tsintergy.com:8070/-/profile/personal_access_tokens （头像 → Settings → Access Tokens）；
+2. Name `quality-gate`，Expires 建议不超过一年，Scopes 只勾 **`api`**；
+3. Create 后立刻复制令牌（20 位随机串，**本 GitLab 13.x 不带 `glpat-` 前缀，属正常**；只显示一次）；
+4. 写入环境变量：
 
-- 开发完成后对 Agent 说「按 quality-gate 审查」或「质量审查一下」。
-- 审查结束自动创建**待回访**案例，Agent 输出案例编号与链接。
-- 后续验收完，在任意会话回访：
+```bash
+# macOS（zsh）
+echo 'export QG_GITLAB_TOKEN="你的令牌"' >> ~/.zshrc && source ~/.zshrc
+```
+
+```cmd
+:: Windows（重开终端生效）
+setx QG_GITLAB_TOKEN "你的令牌"
+```
+
+GitLab 地址与案例库项目 ID 已预置在 `config/default.yml`，无需再配。**令牌只放环境变量**：不进代码、不进配置文件、不在群里转发；泄露回同页面 Revoke 重建。
+
+### ④ 验证
+
+```bash
+python3 ~/tools/quality-gate-skill/scripts/qg-feedback.py whoami
+```
+
+输出 `连接成功: <你的用户名> @ http://git.tsintergy.com:8070（案例项目 7854）` 即就绪。
+
+## 日常使用：你只有两个动作
+
+**动作一：开发完成后触发审查。** 说「按 quality-gate 审查」「质量审查一下」「开发完帮我检查」。Agent 会先亮出本次审查计划（范围/风险/预算）再执行：真实功能验证 → 分级代码审查 → 修复回归 → 证据化报告；团队模式自动创建「待回访」案例，把**编号 + 链接**发给你。
+
+**动作二：验收后回访（一句话）。** 在**任意** Agent 会话说：
 
 ```
 质量反馈 QG-20261028-001：验收通过
 质量反馈 QG-20261028-001：发现缺陷：空日期查询报 500
 ```
 
-- 回访共三种方式：上面这句（推荐）、终端跑 `qg-feedback success|defect`、或直接在案例库网页可视化操作（看板拖拽 / 改标签 / `/relabel` 快速命令），详见 cases 仓库 README。确认成功会自动关闭 Issue（`--keep-open` 可保持打开）；Open/Closed 是 GitLab 的 Issue 生命周期，与案例四态标签无关，已关闭案例仍计入统计。
+确认成功自动关单；发现缺陷时 Agent 会补记归因（原审查为什么没拦住、怎么防复发）。也可以在案例库网页回访（看板拖拽/改标签，见 cases 仓库 README），但**推荐 Agent 方式**——归因完整、防呆、自动关单。
 
-## 案例生命周期
+其余全自动：团队模式探测（whoami）、建案、标签维护、统计导出。
+
+## 常见疑问（FAQ）
+
+- **回访成功的案例为什么还在看板 Open 列？** Open/Closed 是 GitLab 的 Issue 生命周期，与案例状态标签是两套东西；确认成功后脚本会自动关闭 Issue，关闭的案例仍计入统计。
+- **不配令牌会怎样？** 单机模式：审查照常执行，只是不建案例。
+- **纯文档/配置改动也要跑功能测试吗？** 不用——按改动性质执行匹配的检查（文档查格式内容、构建/CI 配置跑对应校验）。
+- **一次审查要多久？** 等级软预算：轻量 5–10 分钟、常规 10–20、深度 20–40（高风险可突破但须说明）；必测项未完成不会因超时被报成通过。
+- **怎么升级？** `cd ~/tools/quality-gate-skill && git pull`——技能目录是软链，立即生效，别的什么都不用做。
+- **案例里的 Token / 客户数据安全吗？** 案例只存脱敏摘要，默认不上传完整 diff、Token、客户数据、未脱敏日志。
+
+## 案例生命周期（看懂案例库）
 
 | 状态 | 含义 | 统计口径 |
 | --- | --- | --- |
-| 待回访 | 审查已记录，等用户验收反馈 | 不计成功率/失败率 |
-| 确认成功 | 验收后在观察期内未发现问题 | 计入成功 |
+| 待回访 | 审查已记录，等使用者验收反馈 | 不计比率 |
+| 确认成功 | 验收后观察期内未发现问题 | 计入成功 |
 | 发现遗漏缺陷 | 验收发现此前未识别的问题 | 计入缺陷，必须归因 |
-| 未回访 | 观察期（默认 30 天）内无反馈 | 结果未知，不计入任何比率 |
-
-注意：审查中拦截并修复了真实缺陷、最终验收通过的，算**成功案例**，其价值在「拦截缺陷明细」，案例中单独记录。
+| 未回访 | 观察期（默认 30 天）内无反馈 | 不计任何比率 |
 
 ## 维护者：规则怎么迭代
 
@@ -178,55 +147,35 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate   # dsh 兼容跨
 python3 ~/tools/quality-gate-skill/scripts/qg-feedback.py export --out cases.jsonl --mark-stale
 ```
 
-输出状态/风险分布、拦截缺陷合计、遗漏缺陷案例清单 + 全量 JSONL（`--mark-stale` 把过期待回访正式标为未回访）。
-
-不想手动跑就配自动周报：仓库 **Settings → CI/CD → Variables** 加 `QG_GITLAB_TOKEN`（若勾 Masked 报格式错误就不勾——本实例令牌含 `-`，旧版字符集可能不让 mask；脚本本身不会打印令牌），再在 **Settings → CI/CD → Schedules** 建每周任务，`.gitlab-ci.yml` 里的 `weekly-case-report` 会自动产出报告到 artifacts。
+输出状态/风险分布、拦截缺陷合计、遗漏缺陷案例清单 + 全量 JSONL。自动周报：仓库 **Settings → CI/CD → Variables** 加 `QG_GITLAB_TOKEN`（若 Masked 报格式错误就不勾——本实例令牌含 `-`，旧版字符集可能不让 mask；脚本不会打印令牌），再在 **Schedules** 建每周任务，`weekly-case-report` 自动产出报告到 artifacts。
 
 ### 2. 分析
 
-把 `cases.jsonl` 丢给 AI Agent 出改进提案，围绕四个标准问题：
+把 `cases.jsonl` 交给 AI Agent 出改进提案，围绕四个标准问题：
 
 - 哪类任务交付后仍出缺陷？→ 增加针对性检查规则
 - 哪些检查从没拦过问题、还经常阻塞？→ 裁剪或调整执行条件
 - 轻量档是否长期够用？→ 校准风险分级
 - 哪些规则误报多？→ 收紧判定条件
 
-遗漏缺陷案例重点看归因字段 `why_missed`（原审查为什么没拦住）和 `rule_change_hint`（改哪条可防复发）。比较两个版本的缺陷率时**按任务类型和风险等级对照**，不同版本承接的任务难度不同，总量对比不可信；案例不足时只当趋势线索。
+遗漏缺陷案例重点看归因字段 `why_missed` 与 `rule_change_hint`；结合 `execution_metrics` 看成本差异。**比较两个版本时按任务类型和风险等级对照**，总量对比不可信；不以缺陷数量或 Token 消耗单一指标下结论。
 
 ### 3. 改规则
 
-在克隆仓库开分支改 `SKILL.md`，**同一提交内**完成三件事：
+开分支改 `SKILL.md`，**同一提交内**完成三件事：升 `VERSION`（增强升中位号 / 裁剪升大位号 / 小修升末位号）；`CHANGELOG.md` 记一条（改了什么、依据哪个 QG 案例）；逐条核对 `regression-cases/cases.yml` 命中的行为没被改坏（MR 描述列出核对过的用例编号）。
 
-1. **升 `VERSION`**：加规则/增强 → 升中位号（1.0.0→1.1.0）；裁剪或行为变更 → 考虑升大位号（→2.0.0）；笔误小修 → 升末位号；
-2. **`CHANGELOG.md` 加一条**（改了什么、依据哪个 QG 案例）；
-3. **逐条核对 `regression-cases/cases.yml`**：确认命中的行为没被改坏——例如放松轻量范围后，RC-004「简单 CRUD 不启动前端 GUI」必须仍然成立；MR 描述里列出核对过的用例编号。
+### 4. 合入与发布
 
-### 4. 合入
-
-push 分支 → GitLab 建 MR → 合并 `main`（main 受保护、禁 force push，正常合并没问题）。单人维护嫌 MR 重，直接在 main 上 commit + push 也行（创建者有权限）；MR 流程的价值是留痕与评审，多人参与后建议启用。
-
-### 5. 发布
-
-```bash
-git tag v1.1.0 && git push origin v1.1.0
-```
-
-同事那边 `git pull` 即升级——技能目录是软链，拉完立即生效，无需其他操作。
+push 分支 → MR → 合并 `main`（受保护、禁 force push；单人可直接 push main，MR 的价值是留痕）→ `git tag v1.1.0 && git push origin v1.1.0`。同事 `git pull` 即升级。
 
 ### 铁律
 
-**单次案例不直接改规则。** 所有修改都要有案例证据支撑（哪个 QG 案例暴露的、什么规律），防止规则跟着个案来回摇摆。证据尚不足的想法先在技能仓库开「候选提案」Issue 留痕（标签 `候选提案`，标题带证据计数如 1/3，正文含规则草案、案例依据与采纳阈值），达到约定阈值（如 3 次同类证据）再以 MR 落成正式规则并补回归用例；出现反证则关闭提案并记录原因。使用者不在本地修改公共规则，统一拉取正式版。
+**单次案例不直接改规则。** 修改要有案例证据支撑；证据不足的想法在技能仓库开「候选提案」Issue 留痕（标签 `候选提案`、标题带证据计数如 1/3、正文含草案/依据/采纳阈值），达到约定阈值再 MR 落规则，反证则关闭留痕。使用者不在本地修改公共规则，统一拉取正式版。
 
-分支规则：`main` 为开发版（所有修改走 MR），tag 为正式版；每个案例记录运行时 Skill 版本，保证可追溯。
+> 当前进度：**v1.3.0 冻结为试运行基线**——只修阻断问题与实现缺陷，攒 20–30 个覆盖各范围×各等级的案例后做首次正式复盘。
 
 ## 安全
 
-- `QG_GITLAB_TOKEN` 只放本地环境变量或公司批准的密钥管理，**绝不入库**。
-- 案例默认不上传完整 diff、客户数据、Token、Cookie、未脱敏日志。
-- 默认在本地/测试环境执行验证；未经授权不得在生产做写操作验证。
-
-## 实施三阶段
-
-1. **打通案例闭环**（现在即可）：同事接入 + 每次审查建案 + 回访，先保证数据真实完整。
-2. **自动汇总**：配置 CI schedule 与变量（仓库 Settings → CI/CD → Variables 添加 `QG_GITLAB_TOKEN` 并勾 Masked，再建 schedule pipeline 触发 `.gitlab-ci.yml` 里的 `weekly-case-report`），周期产出分类报告。
-3. **AI 辅助迭代**：定期让 AI 分析案例库提出规则增删与校准建议，维护者评审后 MR 发布。
+- 令牌只放本地环境变量或 CI/CD Variables（Masked），**绝不入库**；
+- 案例默认不上传完整 diff、客户数据、Token、Cookie、未脱敏日志；
+- 验证默认在本地/测试环境执行，写操作用隔离测试数据；未经授权不得在生产做改删数据的验证。
