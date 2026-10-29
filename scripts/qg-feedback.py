@@ -331,12 +331,34 @@ def cmd_whoami(args, cfg):
     return 0
 
 
+METRIC_ALIASES = {"duration_seconds": "elapsed_seconds", "test_duration_seconds": "elapsed_seconds",
+                  "total_seconds": "elapsed_seconds", "tokens_in": "input_tokens", "tokens_out": "output_tokens"}
+
+
+def normalize_record(record):
+    """建案前规整：常见字段别名自动映射（如 duration_seconds→elapsed_seconds，09 号案例的耗时丢失教训）；
+    execution_metrics 之外的未知顶层键打印告警，提醒建案 Agent 字段名与 schema 对齐。"""
+    em = record.get("execution_metrics")
+    if isinstance(em, dict):
+        for alias, canonical in METRIC_ALIASES.items():
+            if alias in em and not em.get(canonical):
+                em[canonical] = em.pop(alias)
+                print(f"[规整] execution_metrics.{alias} → {canonical}")
+    known = set(json.load(open(os.path.join(REPO_ROOT, "schemas", "quality-case.schema.json"),
+                               encoding="utf-8"))["properties"].keys())
+    unknown = [k for k in record if k not in known]
+    if unknown:
+        print(f"[告警] 以下字段不在 schema 中（已忽略，请核对字段名）: {', '.join(unknown)}")
+    return record
+
+
 def cmd_create(args, cfg):
     try:
         with open(args.file, encoding="utf-8") as f:
             record = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         raise QGError(f"读取案例文件失败: {e}")
+    record = normalize_record(record)
     for field in ("skill_version", "scope", "risk_level", "task_summary", "task_type"):
         if not record.get(field):
             raise QGError(f"案例缺少必填字段: {field}")
@@ -385,14 +407,21 @@ def update_case(cfg, case_id, status_label, note):
     print(f"已更新 {case_id} → {status_label}")
 
 
+def close_issue(cfg, case_id, note):
+    iid = iid_from_case_id(case_id)
+    if note:
+        api(cfg, "POST", f"/projects/{cfg['project_id']}/issues/{iid}/notes", {"body": note})
+    api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}", {"state_event": "close"})
+    print(f"已关闭 {case_id}")
+
+
 def cmd_success(args, cfg):
     ensure_ready(cfg)
     note = f"## 验收回访：验收通过\n- 反馈: {args.note or '（未附说明）'}\n- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     update_case(cfg, args.case_id, LABEL_SUCCESS, note)
     if not args.keep_open:
-        iid = iid_from_case_id(args.case_id)
-        api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}", {"state_event": "close"})
-        print(f"已关闭 {args.case_id}——确认成功即案例闭环结束（观察期内复发可 reopen 或新开案例；--keep-open 可保持打开）")
+        close_issue(cfg, args.case_id,
+                    "验收通过 → 案例闭环（观察期内复发可 reopen 或新开案例；--keep-open 可保持打开）")
     return 0
 
 
@@ -406,7 +435,16 @@ def cmd_defect(args, cfg):
         f"- 记录时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
     ])
     update_case(cfg, args.case_id, LABEL_DEFECT, note)
-    print(f"{args.case_id} 保持打开直至缺陷处置完成；处置后可关闭（网页 Close、看板拖入 Closed 列、或评论 /close）")
+    if args.fixed:
+        close_issue(cfg, args.case_id, "缺陷已修复并验证（回访时确认）→ 案例闭环，数据永久保留供规则复盘")
+    else:
+        print(f"{args.case_id} 保持打开；缺陷处置完成后说「质量反馈 {args.case_id}：缺陷已修复」即可关闭")
+    return 0
+
+
+def cmd_close(args, cfg):
+    ensure_ready(cfg)
+    close_issue(cfg, args.case_id, args.note or "缺陷处置完成 → 案例闭环")
     return 0
 
 
@@ -485,6 +523,10 @@ def main():
     d.add_argument("--reason", required=True)
     d.add_argument("--why-missed", default="")
     d.add_argument("--rule-hint", default="")
+    d.add_argument("--fixed", action="store_true", help="缺陷已修复并验证，回访即关闭案例")
+    cl = sub.add_parser("close", help="缺陷处置完成后关闭案例")
+    cl.add_argument("case_id")
+    cl.add_argument("--note", default="")
     l = sub.add_parser("list", help="列出案例")
     l.add_argument("--status", default="", help="待回访/确认成功/发现遗漏缺陷/未回访")
     e = sub.add_parser("export", help="导出案例与统计")
@@ -493,7 +535,7 @@ def main():
     args = p.parse_args()
     cfg = get_config()
     handlers = {"whoami": cmd_whoami, "create": cmd_create, "success": cmd_success,
-                "defect": cmd_defect, "list": cmd_list, "export": cmd_export}
+                "defect": cmd_defect, "close": cmd_close, "list": cmd_list, "export": cmd_export}
     try:
         return handlers[args.cmd](args, cfg)
     except QGError as err:

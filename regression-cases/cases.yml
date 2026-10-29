@@ -42,6 +42,16 @@ cases:
     scenario: 创建任一案例
     expected: 含 task_type 与 task_summary（bugfix 类附原始症状与预期行为）；code_review 区分 detected_findings 与 open_findings（处置未确认记 null，不得臆断为 0），P1 及以上有 items 明细（级别/位置/处置）；code_version 含分支与改动文件清单；回访前 retrospective 为空、案例 Issue 内无改进提案内容
 
+  - id: RC-010
+    rule: 回访收口自判定（v1.3.2 起）
+    scenario: 用户发起任一形式回访
+    expected: Agent 同轮判定是否关闭——通过→关闭；缺陷已修复→defect --fixed 同轮关闭；缺陷未处置→保持打开并告知「缺陷已修复」关闭话术；反馈无法判断处置状态才追问，不得要求用户二次指挥关闭
+
+  - id: RC-011
+    rule: 建案字段名一致性
+    scenario: 建案 JSON 中出现已知别名（如 duration_seconds）或未知字段
+    expected: 脚本自动映射别名到 schema 字段并对未知顶层字段告警；真实耗时不得因字段名漂移丢失（009 教训）
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算
