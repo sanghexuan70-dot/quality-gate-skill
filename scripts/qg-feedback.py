@@ -115,22 +115,50 @@ def api(cfg, method, path, payload=None):
         raise QGError(f"无法连接 GitLab: {e.reason}") from None
 
 
-def ensure_labels(cfg):
-    """先查后建：已存在的标签不再 POST（GitLab 13.11 的『Label already exists』藏在 error 字段且
-    曾导致 create 中断）；新建标签必须带 color（该版本无 color 的创建会被拒）。"""
-    existing, page = set(), 1
+def get_label_map(cfg):
+    """项目标签名→ID 映射（以 label_ids 更新标签的前提）。"""
+    m, page = {}, 1
     while True:
         batch = api(cfg, "GET", f"/projects/{cfg['project_id']}/labels?per_page=100&page={page}")
         if not batch:
             break
-        existing.update(l["name"] for l in batch)
+        m.update({l["name"]: l["id"] for l in batch})
         if len(batch) < 100:
             break
         page += 1
+    return m
+
+
+def ensure_labels(cfg):
+    """先查后建：已存在的标签不再 POST（GitLab 13.11 的『Label already exists』藏在 error 字段且
+    曾导致 create 中断）；新建标签必须带 color（该版本无 color 的创建会被拒）。"""
+    existing = set(get_label_map(cfg))
     for name in ALL_LABELS:
         if name not in existing:
             api(cfg, "POST", f"/projects/{cfg['project_id']}/labels",
                 {"name": name, "color": "#6699cc"})
+
+
+def set_issue_labels(cfg, iid, names):
+    """多策略更新案例标签并逐策略 GET 复核（实测本实例：官方客户端 labels 参数生效、label_ids 被静默忽略；
+    受限网关环境相反——016 取证。顺序尝试，任一策略复核通过即成功；应用后连接可能被重置，一律以 GET 为准）。"""
+    lm = get_label_map(cfg)
+    missing = [n for n in names if n not in lm]
+    if missing:
+        raise QGError(f"标签不存在，请先由维护者创建: {', '.join(missing)}")
+    strategies = [
+        {"labels": list(names)},
+        {"label_ids": [lm[n] for n in names]},
+    ]
+    for payload in strategies:
+        try:
+            api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}", payload)
+        except QGError:
+            pass  # 连接重置等传输错误：标签可能已生效，交给复核判定
+        got = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{iid}").get("labels") or []
+        if set(names).issubset(set(got)):
+            return got
+    raise QGError(f"标签更新未生效（期望含 {names}，实际 {got}）——请在网页手动处理")
 
 
 # ---------- 案例工具 ----------
@@ -418,7 +446,7 @@ def cmd_create(args, cfg):
     issue = api(cfg, "POST", f"/projects/{cfg['project_id']}/issues", {
         "title": f"[创建中] {record['scope']}/{record['risk_level']} {today}",
         "description": build_description(record),
-        "labels": f"{LABEL_ROOT},{LABEL_PENDING}",
+        "labels": [LABEL_ROOT, LABEL_PENDING],
     })
     case_id = f"QG-{today}-{issue['iid']:03d}"
     record["case_id"] = case_id
@@ -433,8 +461,7 @@ def cmd_create(args, cfg):
     final = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{issue['iid']}")
     need = {LABEL_ROOT, LABEL_PENDING}
     if not need.issubset(set(final.get("labels") or [])):
-        api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{issue['iid']}",
-            {"labels": ",".join(sorted(set(final.get("labels") or []) | need))})
+        set_issue_labels(cfg, issue["iid"], sorted(need))
         final = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{issue['iid']}")
         if not need.issubset(set(final.get("labels") or [])):
             raise QGError(f"案例 {case_id} 标签写入异常（当前: {final.get('labels')}）——请在网页手动补 QG、待回访 标签")
@@ -451,8 +478,7 @@ def cmd_create(args, cfg):
 
 def update_case(cfg, case_id, status_label, note):
     iid = iid_from_case_id(case_id)
-    api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}",
-        {"labels": f"{LABEL_ROOT},{status_label}"})
+    set_issue_labels(cfg, iid, [LABEL_ROOT, status_label])
     if note:
         api(cfg, "POST", f"/projects/{cfg['project_id']}/issues/{iid}/notes", {"body": note})
     print(f"已更新 {case_id} → {status_label}")
@@ -569,8 +595,7 @@ def cmd_export(args, cfg):
         stale = status == LABEL_PENDING and created and (now - created) > obs
         if stale:
             if args.mark_stale:
-                api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{it['iid']}",
-                    {"labels": f"{LABEL_ROOT},{LABEL_NOFOLLOWUP}"})
+                set_issue_labels(cfg, it["iid"], [LABEL_ROOT, LABEL_NOFOLLOWUP])
                 status = LABEL_NOFOLLOWUP
             else:
                 status = LABEL_NOFOLLOWUP  # 统计口径：过期未反馈按未回访计
