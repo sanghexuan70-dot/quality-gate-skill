@@ -259,9 +259,13 @@ def build_description(record):
         for sev in ("p0", "p1", "p2", "p3"):
             n = det.get(sev, 0)
             if n:
-                st = "、".join(sorted({CN_ITEM_STATUS.get(i.get("status"), "处置未知")
-                                       for i in items if (i.get("severity") or "").upper() == sev.upper()})) or "处置未知"
-                parts.append(f"{sev.upper()}×{n}（{st}）")
+                st_counts = {}
+                for i in items:
+                    if (i.get("severity") or "").upper() == sev.upper():
+                        s = CN_ITEM_STATUS.get(i.get("status"), "处置未知")
+                        st_counts[s] = st_counts.get(s, 0) + 1
+                st_s = "·".join(f"{v} {k}" for k, v in st_counts.items()) or "处置未知"
+                parts.append(f"{sev.upper()}×{n}（{st_s}）")
         L.append("**审查发现**：" + (" · ".join(parts) if parts else "无") + open_note)
     else:
         det_s = " · ".join(f"{s.upper()}×{det.get(s, 0)}" for s in ("p0", "p1", "p2", "p3") if det.get(s))
@@ -425,6 +429,15 @@ def cmd_create(args, cfg):
         "title": f"[{case_id}] {LABEL_PENDING} | {record['scope']}/{record['risk_level']} | {summary}",
         "description": build_description(record),
     })
+    # 建案自检自愈：标签因任何原因缺失则补写并复验（011/016 教训——标签丢失案例无法上板回访）
+    final = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{issue['iid']}")
+    need = {LABEL_ROOT, LABEL_PENDING}
+    if not need.issubset(set(final.get("labels") or [])):
+        api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{issue['iid']}",
+            {"labels": ",".join(sorted(set(final.get("labels") or []) | need))})
+        final = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{issue['iid']}")
+        if not need.issubset(set(final.get("labels") or [])):
+            raise QGError(f"案例 {case_id} 标签写入异常（当前: {final.get('labels')}）——请在网页手动补 QG、待回访 标签")
     if not args.no_writeback:
         record["issue_iid"] = issue["iid"]
         record["web_url"] = updated.get("web_url", "")

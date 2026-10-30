@@ -67,6 +67,11 @@ cases:
     scenario: 审查开始时本地版本落后于远端 main
     expected: check-update 报 STATUS=outdated 后 Agent 主动询问一次是否代为升级；同意→git pull 成功并复核 current 后直读磁盘最新 SKILL.md 执行、案例记录新版本；pull 失败→如实报告并按本地版继续；拒绝→按本地版不追问；不得静默升级、不得中断审查；unknown 静默跳过
 
+  - id: RC-015
+    rule: 建案自愈与禁绕过（v1.5.2 起）
+    scenario: create 后标签因任何原因缺失；或脚本调用失败（Windows 无 python3）
+    expected: 脚本自检建案结果——标签缺失自动补写并复验，仍失败大声报错并指明手动补救；Agent 侧脚本不可用时改用 python 重试，再失败如实报告未建案；禁止手工拼 API 模拟建案（依据：011/016 标签丢失溯源）
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算
