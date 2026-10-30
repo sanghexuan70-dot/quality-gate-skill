@@ -354,8 +354,7 @@ def cmd_check_update(args, cfg):
         print(f"STATUS=current local=v{local} remote=v{remote}")
         return 0
     print(f"STATUS=outdated local=v{local} remote=v{remote}")
-    print("升级: cd ~/tools/quality-gate-skill && git pull；技能内容在会话启动时加载，新开会话生效；"
-          "当前会话如需立即用新版，可让 Agent 直接读取仓库 SKILL.md 全文执行")
+    print("升级: git -C <技能仓库> pull——可由 Agent 征得用户同意后代劳；pull 后直接读取磁盘最新 SKILL.md 执行即生效，无需重启会话")
     return 0
 
 
