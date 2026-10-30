@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0 - 2026-10-30
+
+版本更新感知机制（需求：频繁发版后使用者如何得知并正确升级）：
+- 新增 check-update 子命令：对比本地与远端 main 的 VERSION（仓库 public，无需令牌），输出 STATUS=current/outdated/unknown；outdated 附升级命令与"新会话生效、当前会话可直读仓库 SKILL.md"提示；
+- SKILL 阶段 0 新增第一步"版本检查（先于一切）"：outdated 时如实告知用户（按本地版继续不中断，案例如实记录本地版本），unknown 静默跳过；
+- README「怎么升级」FAQ 修正：明确技能内容在会话启动时加载、pull 后需新开会话稳定生效、落后版本审查不受影响；
+- 新增 RC-014 回归用例。
+
 ## 1.4.0 - 2026-10-30
 
 误报数据闭环落地（提案 #4，原定首次复盘评审，维护者拍板提前采纳；依据：2026-10-30 审计 confirmed_false_positives 与 items.confirmed 全空置、无采集入口）：

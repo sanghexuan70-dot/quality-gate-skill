@@ -62,6 +62,11 @@ cases:
     scenario: 回访确认某审查发现实际不是问题
     expected: false-positive 命中 items 明细则 confirmed=false、多命中时拒绝并列出候选要求更长关键词；计入 follow_up.confirmed_false_positives 并留评论；案例状态标签不变更；success 时案例有审查发现则输出误报补记提示
 
+  - id: RC-014
+    rule: 版本检查（v1.5.0 起）
+    scenario: 审查开始时本地版本落后于远端 main
+    expected: check-update 报 STATUS=outdated 并向用户转述新版号、升级命令、新会话生效提示；用户不升级则按本地版继续审查，案例如实记录本地 skill_version；STATUS=unknown 时静默跳过
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算

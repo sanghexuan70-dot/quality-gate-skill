@@ -324,6 +324,41 @@ def fetch_all(cfg):
 
 # ---------- 子命令 ----------
 
+SKILL_PROJECT_ID = "7853"  # 本技能仓库（quality-gate-skill）的项目 ID，供版本检查用
+
+
+def cmd_check_update(args, cfg):
+    """对比本地 VERSION 与远端 main 的 VERSION；无需令牌（仓库 public）。"""
+    local = open(os.path.join(REPO_ROOT, "VERSION"), encoding="utf-8").read().strip()
+    remote = None
+    try:
+        req = urllib.request.Request(
+            f"{cfg['gitlab_url']}/api/v4/projects/{SKILL_PROJECT_ID}/repository/files/VERSION/raw?ref=main")
+        if cfg["token"]:
+            req.add_header("PRIVATE-TOKEN", cfg["token"])
+        with urllib.request.urlopen(req, timeout=10) as r:
+            remote = r.read().decode().strip()
+    except Exception:
+        remote = None
+
+    def key(v):
+        try:
+            return tuple(int(x) for x in v.split("."))
+        except Exception:
+            return (0,)
+
+    if not remote:
+        print(f"STATUS=unknown local=v{local}（无法获取远端版本，跳过检查）")
+        return 0
+    if key(local) >= key(remote):
+        print(f"STATUS=current local=v{local} remote=v{remote}")
+        return 0
+    print(f"STATUS=outdated local=v{local} remote=v{remote}")
+    print("升级: cd ~/tools/quality-gate-skill && git pull；技能内容在会话启动时加载，新开会话生效；"
+          "当前会话如需立即用新版，可让 Agent 直接读取仓库 SKILL.md 全文执行")
+    return 0
+
+
 def cmd_whoami(args, cfg):
     ensure_ready(cfg)
     user = api(cfg, "GET", "/user")
@@ -556,6 +591,7 @@ def main():
     p = argparse.ArgumentParser(prog="qg-feedback", description="quality-gate 案例反馈 CLI（GitLab Issues 后端）")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("whoami", help="验证令牌与连通性")
+    sub.add_parser("check-update", help="版本检查：本地 vs 远端 main（无需令牌）")
     c = sub.add_parser("create", help="创建待回访案例")
     c.add_argument("--file", required=True, help="案例 JSON（结构见 schemas/quality-case.schema.json）")
     c.add_argument("--dry-run", action="store_true", help="只预览，不调用 GitLab")
@@ -584,9 +620,9 @@ def main():
     e.add_argument("--mark-stale", action="store_true", help="把过期待回访正式改标为未回访")
     args = p.parse_args()
     cfg = get_config()
-    handlers = {"whoami": cmd_whoami, "create": cmd_create, "success": cmd_success,
-                "defect": cmd_defect, "close": cmd_close, "false-positive": cmd_false_positive,
-                "list": cmd_list, "export": cmd_export}
+    handlers = {"whoami": cmd_whoami, "check-update": cmd_check_update, "create": cmd_create,
+                "success": cmd_success, "defect": cmd_defect, "close": cmd_close,
+                "false-positive": cmd_false_positive, "list": cmd_list, "export": cmd_export}
     try:
         return handlers[args.cmd](args, cfg)
     except QGError as err:
