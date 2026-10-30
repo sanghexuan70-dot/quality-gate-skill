@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.0 - 2026-10-30
+
+误报数据闭环落地（提案 #4，原定首次复盘评审，维护者拍板提前采纳；依据：2026-10-30 审计 confirmed_false_positives 与 items.confirmed 全空置、无采集入口）：
+- 新增 false-positive 子命令：回访确认审查误报——按关键词匹配 items 明细（多命中拒绝并列出候选），置 confirmed=false、计入 follow_up.confirmed_false_positives、留评论；案例状态标签不变更；
+- success 关闭后若案例有审查发现，输出误报补记提示（供复盘收紧误报多的规则）；
+- SKILL 回访协议新增第三话术「确认误报」；新增 RC-013 回归用例；
+- 迭代验证三指标（漏网率/误报代价/成本中位数）自此全部有数据采集路径（elapsed 必填已于 v1.3.4 落地）。
+
 ## 1.3.4 - 2026-10-30
 
 修复 elapsed_seconds 字段归类错误（提案 #3，定性实现缺陷，维护者确认后落地；依据：8 案例审计 7 例 None）：

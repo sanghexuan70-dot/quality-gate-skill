@@ -57,6 +57,11 @@ cases:
     scenario: 建案时 execution_metrics.elapsed_seconds 缺失或为 null
     expected: 脚本拒绝创建并明确提示自计时义务（依据：提案 #3——8 案例审计 7 例 None，字段被误归为平台数据）；正常建案的 elapsed 为实测值
 
+  - id: RC-013
+    rule: 误报闭环（v1.4.0 起，提案 #4）
+    scenario: 回访确认某审查发现实际不是问题
+    expected: false-positive 命中 items 明细则 confirmed=false、多命中时拒绝并列出候选要求更长关键词；计入 follow_up.confirmed_false_positives 并留评论；案例状态标签不变更；success 时案例有审查发现则输出误报补记提示
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算

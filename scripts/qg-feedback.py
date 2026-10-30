@@ -426,6 +426,10 @@ def cmd_success(args, cfg):
     if not args.keep_open:
         close_issue(cfg, args.case_id,
                     "验收通过 → 案例闭环（观察期内复发可 reopen 或新开案例；--keep-open 可保持打开）")
+    issue = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{iid_from_case_id(args.case_id)}")
+    cr = (record_of(issue) or {}).get("code_review") or {}
+    if cr.get("items") or cr.get("detected_findings") or cr.get("findings"):
+        print(f"提示: 该案有审查发现；如有实际不成立的问题，可说「质量反馈 {args.case_id}：确认误报：<问题关键词>」补记（供规则复盘收紧误报）")
     return 0
 
 
@@ -449,6 +453,44 @@ def cmd_defect(args, cfg):
 def cmd_close(args, cfg):
     ensure_ready(cfg)
     close_issue(cfg, args.case_id, args.note or "缺陷处置完成 → 案例闭环")
+    return 0
+
+
+def cmd_false_positive(args, cfg):
+    """回访补记：确认审查误报——items.confirmed=false + 计入 confirmed_false_positives，不改案例状态。"""
+    ensure_ready(cfg)
+    iid = iid_from_case_id(args.case_id)
+    issue = api(cfg, "GET", f"/projects/{cfg['project_id']}/issues/{iid}")
+    rec = record_of(issue)
+    if not rec:
+        raise QGError("案例描述中未找到可解析的案例 JSON，无法补记误报")
+    cr = rec.get("code_review") or {}
+    items = cr.get("items") or []
+    hits = [i for i in items if args.finding in (i.get("summary") or "")]
+    if len(hits) > 1:
+        listing = "\n".join(f"  - {i.get('severity', '?')}: {(i.get('summary') or '')[:60]}" for i in hits)
+        raise QGError(f"「{args.finding}」匹配到多个问题，请用更长的关键词区分：\n{listing}")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    if hits:
+        hits[0]["confirmed"] = False
+        entry = f"[{hits[0].get('severity', '?')}] {(hits[0].get('summary') or '')[:60]}"
+    else:
+        entry = args.finding
+    fu = rec.get("follow_up") or {}
+    fps = fu.get("confirmed_false_positives") or []
+    fps.append((f"{args.note}：" if args.note else "") + f"{entry}（回访确认误报 {now}）")
+    fu["confirmed_false_positives"] = fps
+    fu.setdefault("feedback_at", now)
+    rec["follow_up"] = fu
+    api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{iid}", {"description": build_description(rec)})
+    api(cfg, "POST", f"/projects/{cfg['project_id']}/issues/{iid}/notes", {"body": "\n".join([
+        "## 回访补记：确认误报",
+        f"- 问题: {args.finding}" + ("（已匹配 items 明细，confirmed=false）" if hits else "（未匹配到 items，按描述记录）"),
+        f"- 说明: {args.note or '（无）'}",
+        f"- 用途: 计入 confirmed_false_positives，供复盘收紧误报多的规则",
+        f"- 时间: {now}",
+    ])})
+    print(f"已记录误报: {args.case_id}（累计 {len(fps)} 项；案例状态不变）")
     return 0
 
 
@@ -531,6 +573,10 @@ def main():
     cl = sub.add_parser("close", help="缺陷处置完成后关闭案例")
     cl.add_argument("case_id")
     cl.add_argument("--note", default="")
+    fp = sub.add_parser("false-positive", help="回访补记: 确认审查误报（不改案例状态）")
+    fp.add_argument("case_id")
+    fp.add_argument("--finding", required=True, help="问题摘要关键词（匹配 items 明细）")
+    fp.add_argument("--note", default="")
     l = sub.add_parser("list", help="列出案例")
     l.add_argument("--status", default="", help="待回访/确认成功/发现遗漏缺陷/未回访")
     e = sub.add_parser("export", help="导出案例与统计")
@@ -539,7 +585,8 @@ def main():
     args = p.parse_args()
     cfg = get_config()
     handlers = {"whoami": cmd_whoami, "create": cmd_create, "success": cmd_success,
-                "defect": cmd_defect, "close": cmd_close, "list": cmd_list, "export": cmd_export}
+                "defect": cmd_defect, "close": cmd_close, "false-positive": cmd_false_positive,
+                "list": cmd_list, "export": cmd_export}
     try:
         return handlers[args.cmd](args, cfg)
     except QGError as err:
