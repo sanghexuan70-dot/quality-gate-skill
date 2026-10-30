@@ -3,7 +3,7 @@
   "title": "quality-gate 案例记录",
   "description": "每次质量审查结束后创建的结构化案例；提交到 GitLab Issue 描述中的 ```json 代码块必须符合本结构。证据脱敏后再填。v1.2.0：新增 task_type 与任务背景字段、detected/open findings 拆分、items 问题明细、版本信息扩展、retrospective 复盘块（仅回访后填写）。",
   "type": "object",
-  "required": ["skill_version", "task_summary", "task_type", "scope", "risk_level"],
+  "required": ["skill_version", "task_summary", "task_type", "scope", "risk_level", "execution_metrics"],
   "properties": {
     "case_id": {
       "type": "string",
@@ -42,9 +42,10 @@
     },
     "execution_metrics": {
       "type": "object",
-      "description": "执行成本指标——所有字段必须有真实来源（真实计时、平台统计）；无法获取的字段记 null（未知），禁止估算填数",
+      "required": ["elapsed_seconds"],
+      "description": "执行成本指标——elapsed_seconds 由审查 Agent 自行计时（必填）；其余字段必须有真实来源（真实计时、平台统计）；无法获取的字段记 null（未知），禁止估算填数",
       "properties": {
-        "elapsed_seconds": { "type": ["integer", "null"], "description": "审查开始执行到最终报告完成的真实耗时（秒）" },
+        "elapsed_seconds": { "type": "integer", "description": "审查开始执行到最终报告完成的真实耗时（秒）——Agent 自计时，必填，禁止留空" },
         "build_seconds": { "type": ["integer", "null"], "description": "构建 / 环境启动耗时（秒）" },
         "test_cases_planned": { "type": ["integer", "null"] },
         "test_cases_executed": { "type": ["integer", "null"] },

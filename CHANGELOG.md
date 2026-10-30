@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.4 - 2026-10-30
+
+修复 elapsed_seconds 字段归类错误（提案 #3，定性实现缺陷，维护者确认后落地；依据：8 案例审计 7 例 None）：
+- 该字段原被归为"平台数据"（取不到记 null），实际是 Agent 可自行计时的数据——现改为自计时必填：schema required（execution_metrics 与 elapsed_seconds 双层必填、类型收紧为 integer）、脚本 create 增加建案门禁（缺失/null 拒绝创建并提示自计时义务）、SKILL 建案清单改为强指令；
+- 新增 RC-012 回归用例；Token 等真正取不到的平台字段维持 null 口径不变。
+
 ## 1.3.3 - 2026-10-30
 
 迭代验证协议成文（文档完善，无行为变更）：

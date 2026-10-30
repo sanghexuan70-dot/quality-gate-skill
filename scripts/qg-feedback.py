@@ -362,6 +362,10 @@ def cmd_create(args, cfg):
     for field in ("skill_version", "scope", "risk_level", "task_summary", "task_type"):
         if not record.get(field):
             raise QGError(f"案例缺少必填字段: {field}")
+    em = record.get("execution_metrics")
+    if not isinstance(em, dict) or em.get("elapsed_seconds") is None:
+        raise QGError("案例缺少必填字段: execution_metrics.elapsed_seconds"
+                      "（Agent 自计时：审查开始执行到报告完成的秒数，实测填写，禁止留空）")
     record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
     record.setdefault("outcome_status", "pending")
 

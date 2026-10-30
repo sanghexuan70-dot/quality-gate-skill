@@ -52,6 +52,11 @@ cases:
     scenario: 建案 JSON 中出现已知别名（如 duration_seconds）或未知字段
     expected: 脚本自动映射别名到 schema 字段并对未知顶层字段告警；真实耗时不得因字段名漂移丢失（009 教训）
 
+  - id: RC-012
+    rule: 成本指标自计时必填（v1.3.4 起）
+    scenario: 建案时 execution_metrics.elapsed_seconds 缺失或为 null
+    expected: 脚本拒绝创建并明确提示自计时义务（依据：提案 #3——8 案例审计 7 例 None，字段被误归为平台数据）；正常建案的 elapsed 为实测值
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算
