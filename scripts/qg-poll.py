@@ -68,16 +68,21 @@ def find_mr(cfg, branch):
 
 
 def all_mrs(cfg):
-    mrs, page = [], 1
-    while True:
-        batch = qgf.api(cfg, "GET",
-                        f"/merge_requests?state=all&per_page=50&page={page}&order_by=updated_at&sort=desc")
-        if not batch:
-            break
-        mrs.extend(batch)
-        if len(batch) < 50 or page >= 10:
-            break
-        page += 1
+    """发现候选：开放 MR（最多 1000 条——开放集合小，覆盖周内未更新的 MR）+
+    近期已合并 MR（200 条，兜住案例建晚于合并的场景）。旧版教训：全量 state=all 只看最新 500 会漏掉安静的开放 MR。"""
+    mrs = []
+    for state, max_pages in (("opened", 20), ("merged", 4)):
+        page = 1
+        while page <= max_pages:
+            batch = qgf.api(cfg, "GET",
+                            f"/merge_requests?state={state}&per_page=50&page={page}"
+                            f"&order_by=updated_at&sort=desc")
+            if not batch:
+                break
+            mrs.extend(batch)
+            if len(batch) < 50:
+                break
+            page += 1
     return mrs
 
 
