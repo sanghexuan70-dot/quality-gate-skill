@@ -9,8 +9,17 @@ validate:
   image: python:3.11-slim
   tags: [tsintergy-public]   # 共享 Runner 只接带 tag 的作业（run_untagged=false），无 tag 会挂起至失败
   script:
-    - python -m py_compile scripts/qg-feedback.py
+    - python -m py_compile scripts/qg-feedback.py scripts/qg-poll.py
     - python scripts/validate_repo.py
+
+qg-poll:
+  stage: report
+  image: python:3.11-slim
+  tags: [tsintergy-public]
+  rules:
+    - if: '$QG_GITLAB_TOKEN != null && $CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - python scripts/qg-poll.py once
 
 weekly-case-report:
   stage: report

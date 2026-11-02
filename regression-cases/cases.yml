@@ -72,6 +72,11 @@ cases:
     scenario: create 后标签因任何原因缺失；或脚本调用失败（Windows 无 python3）
     expected: 脚本自检建案结果——标签缺失自动补写并复验，仍失败大声报错并指明手动补救；Agent 侧脚本不可用时改用 python 重试，再失败如实报告未建案；禁止手工拼 API 模拟建案（依据：011/016 标签丢失溯源）
 
+  - id: RC-016
+    rule: 自动回访轮询（v2.0.0 起）
+    scenario: 案例无人工回访，CI 定时跑 qg-poll once
+    expected: 按案例 branch 锚点全实例搜 MR 挂钩；merged 记交付证据并起算观察期（7/14/30 天自 merged_at）；期满无缺陷反馈标「未回访（观察期满）」并关闭（no_feedback≠success）；案例评论 /qg 指令被代执行且不重复执行；人工标签（确认成功/发现遗漏缺陷）的案例绝不被自动覆盖；每轮重跑幂等（案例即数据库，无外部状态）
+
   - id: RC-009
     rule: 执行成本控制与停止条件（v1.3.0 起）
     scenario: 审查接近或超出等级软预算
