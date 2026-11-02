@@ -25,6 +25,27 @@ SKILL.md + qg-feedback 脚本          每次审查自动写入，只存数据�
 使用者 git pull 即升级                维护者定期导出分析，反哺规则迭代
 ```
 
+## 环境要求（先对照，再安装）
+
+**普通使用者（跑审查 + 建案 + 回访）**：
+
+| 依赖 | 说明 |
+| --- | --- |
+| git | 克隆与升级本仓库 |
+| Python **3.8+** | 跑 `qg-feedback.py`；**只用标准库，无需 pip install 任何东西**。macOS 自带 `python3`；**Windows 从 [python.org](https://www.python.org/downloads/) 安装时务必勾选 "Add python.exe to PATH"**，且命令名是 `python` 不是 `python3`（脚本调用失败时 Agent 会自动改用 `python` 重试，但自己装好最稳——011/016 案例的标签事故就是没装 Python 导致 Agent 绕过脚本引起的） |
+| 内网 GitLab 可达 | http://git.tsintergy.com:8070（建案/回访走它） |
+| 一个 AI Agent | Claude Code / Codex / DeepSeek Harness 等能读文件、跑 shell 的工具（见下文接入） |
+
+明确**不需要**：Node、Docker、数据库、pip 依赖、任何常驻服务。
+
+**纯网页使用者（只回访，不建案）**：一台能打开内网 GitLab 的浏览器即可——案例 Issue 里评论 `/qg accept QG-xxx` 或 `/qg defect QG-xxx 描述`，CI 轮询（每 2 小时）代为执行，**本地零安装**。
+
+**维护者（CI 自动回访，当前已配置无需重建）**：
+
+- skill 仓库 CI/CD Variables：`QG_GITLAB_TOKEN`（已配）；
+- schedule 448「qg-poll 轮询」`0 */2 * * *`（已配）+ schedule 449「周报」`0 9 * * 1`（已配）；
+- **权限边界**：MR 自动发现依赖轮询令牌的可见性——产品仓库需对令牌持有者给 Reporter 以上权限（或仓库公开），否则该仓库的案例挂不上 MR（案例会一直显示未挂钩，不会报错）。
+
 ## 快速开始（使用者，约 5 分钟）
 
 ### ① 克隆
