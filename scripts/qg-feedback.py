@@ -454,7 +454,7 @@ def cmd_create(args, cfg):
     if len(summary) > 40:
         summary = summary[:40] + "…"
     updated = api(cfg, "PUT", f"/projects/{cfg['project_id']}/issues/{issue['iid']}", {
-        "title": f"[{case_id}] {LABEL_PENDING} | {record['scope']}/{record['risk_level']} | {summary}",
+        "title": f"[{case_id}] {record['scope']}/{record['risk_level']} | {summary}",
         "description": build_description(record),
     })
     # 建案自检自愈：标签因任何原因缺失则补写并复验（011/016 教训——标签丢失案例无法上板回访）
