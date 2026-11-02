@@ -17,7 +17,7 @@ qg-poll:
   image: python:3.11-slim
   tags: [tsintergy-public]
   rules:
-    - if: '$QG_GITLAB_TOKEN != null && $CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$QG_GITLAB_TOKEN != null && $QG_POLL == "true" && $CI_PIPELINE_SOURCE == "schedule"'
   script:
     - python scripts/qg-poll.py once
 
@@ -26,7 +26,7 @@ weekly-case-report:
   image: python:3.11-slim
   tags: [tsintergy-public]
   rules:
-    - if: '$QG_GITLAB_TOKEN != null && $CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$QG_GITLAB_TOKEN != null && $QG_WEEKLY == "true" && $CI_PIPELINE_SOURCE == "schedule"'
   script:
     - mkdir -p report
     - python scripts/qg-feedback.py export --out report/cases.jsonl --mark-stale

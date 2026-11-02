@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2026-11-02
+
+CI 定时作业区分（修复 v2.0.0 引入的冲突：单一 schedule 会让周报也每 2 小时跑）：
+- qg-poll 与 weekly-case-report 分别以 schedule 级变量 QG_POLL=true / QG_WEEKLY=true 区分触发；轮询 schedule 已补挂 QG_POLL 变量，周报 schedule 建立时需带 QG_WEEKLY=true（建议每周一 09:00）。
+
 ## 2.0.0 - 2026-11-02
 
 事件驱动回访·第一期（维护者拍板落地；动机：回访全靠维护者人工驱动不可持续、同事无 Python 环境时手工数据有问题；保留全部手动钩子，自动+手动并行）：
