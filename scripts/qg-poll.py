@@ -51,38 +51,40 @@ def save_case(cfg, case, rec, reason):
             {"body": f"{QG_POLL_MARK}\n## 自动事件（qg-poll）\n{reason}\n- 时间: {now}"})
 
 
-def find_mr(cfg, branch):
-    """全实例按源分支找 MR：精确匹配优先，其次包含；取 updated_at 最新。"""
-    best = None
-    for mr in all_mrs(cfg):
-        sb = mr.get("source_branch") or ""
-        if sb == branch:
-            score = 2
-        elif branch and branch in sb:
-            score = 1
-        else:
-            continue
-        if not best or score > best[0] or (score == best[0] and (mr.get("updated_at") or "") > (best[1].get("updated_at") or "")):
-            best = (score, mr)
-    return best[1] if best else None
+def find_mr(cfg, branch, case_created_at):
+    """按源分支精确查询（无窗口遗漏）+ 时间过滤（交付必然晚于审查）：
+    - merged 候选：merged_at >= 案例创建时间（审查先于交付），取最早合并的——即审查后的首次交付；
+    - opened 候选：created_at >= 案例创建时间 - 3 天（MR 常在审查前后开出），取最新更新的；
+    - 优先 merged（已发生的交付），否则 opened（待跟踪），都没有返回 None。
+    长命分支多 MR 场景（feature-1.0.0-sanghx 20+ 个历史 MR）靠时间过滤避免错挂。"""
+    try:
+        mrs = qgf.api(cfg, "GET",
+                      f"/merge_requests?state=all&source_branch={branch}&per_page=50")
+    except Exception:
+        return None
+    merged_c = [m for m in mrs if m["state"] == "merged"
+                and (m.get("merged_at") or "") >= case_created_at]
+    if merged_c:
+        return min(merged_c, key=lambda m: m.get("merged_at") or "")
+    opened_c = [m for m in mrs if m["state"] == "opened"
+                and (m.get("created_at") or "") >= (case_created_at or "")[:10]]
+    if opened_c:
+        return max(opened_c, key=lambda m: m.get("updated_at") or "")
+    return None
 
 
 def all_mrs(cfg):
-    """发现候选：开放 MR（最多 1000 条——开放集合小，覆盖周内未更新的 MR）+
-    近期已合并 MR（200 条，兜住案例建晚于合并的场景）。旧版教训：全量 state=all 只看最新 500 会漏掉安静的开放 MR。"""
-    mrs = []
-    for state, max_pages in (("opened", 20), ("merged", 4)):
-        page = 1
-        while page <= max_pages:
-            batch = qgf.api(cfg, "GET",
-                            f"/merge_requests?state={state}&per_page=50&page={page}"
-                            f"&order_by=updated_at&sort=desc")
-            if not batch:
-                break
-            mrs.extend(batch)
-            if len(batch) < 50:
-                break
-            page += 1
+    """兼容保留：全量 MR 拉取（发现逻辑已改用按分支精确查询，不再使用）。"""
+    mrs, page = [], 1
+    while True:
+        batch = qgf.api(cfg, "GET",
+                        f"/merge_requests?state=all&per_page=50&page={page}&order_by=updated_at&sort=desc")
+        if not batch:
+            break
+        mrs.extend(batch)
+        if len(batch) < 50 or page >= 10:
+            break
+        page += 1
     return mrs
 
 
@@ -126,7 +128,6 @@ def process_commands(cfg, case, rec, actions):
 
 def run_once(cfg):
     actions = []
-    mrs_cache = {}
     for case in qgf.fetch_all(cfg):
         if case.get("state") == "closed":
             continue
@@ -141,11 +142,9 @@ def run_once(cfg):
             continue
         delivery = rec.setdefault("delivery", {})
         branch = (rec.get("code_version") or {}).get("branch") or ""
-        # 2) 挂钩发现
+        # 2) 挂钩发现（按分支精确查询 + 交付晚于审查的时间过滤）
         if not delivery.get("mr") and branch:
-            if branch not in mrs_cache:
-                mrs_cache[branch] = find_mr(cfg, branch)
-            mr = mrs_cache[branch]
+            mr = find_mr(cfg, branch, case.get("created_at") or "")
             if mr:
                 delivery["mr"] = f"{mr['project_id']}:{mr['iid']}"
                 delivery["mr_state"] = mr["state"]
