@@ -107,7 +107,8 @@ ln -s ~/tools/quality-gate-skill ~/.agents/skills/quality-gate
 
 ```bash
 # macOS（zsh）
-echo 'export QG_GITLAB_TOKEN="你的令牌"' >> ~/.zshrc && source ~/.zshrc
+echo 'export QG_GITLAB_TOKEN="你的令牌"' >> ~/.zshenv && zsh -c 'python3 ~/tools/quality-gate-skill/scripts/qg-feedback.py whoami' && echo 配置成功
+# 注意写 ~/.zshenv 而不是 ~/.zshrc：zshrc 只在交互式 shell 加载，而很多 Agent 用非交互 shell（zsh -c）跑命令，token 放 zshrc 会"时有时无"（真实教训：某项目建案报"未配置 QG_GITLAB_TOKEN"即此因）。zshenv 对所有 shell 生效。
 ```
 
 ```cmd

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1.2 - 2026-11-03
+
+macOS 令牌配置指引修正（真实故障：某项目 Agent 用非交互 shell 跑命令，~/.zshrc 中的 token 不被加载，建案报"未配置 QG_GITLAB_TOKEN"）：README 改为写入 ~/.zshenv（对所有 shell 生效，含 zsh -c），并注明 zshrc 的坑与验证命令。
+
 ## 2.1.1 - 2026-11-02
 
 MR 发现逻辑重写（赶在 schedule 下一轮前修复两个隐患，依据：案例 026 与长命分支 feature-1.0.0-sanghx 的实测）：
